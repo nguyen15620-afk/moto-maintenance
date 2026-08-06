@@ -8,11 +8,13 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
-  fetchVehicles, updateVehicleOdo, updateAvgKmPerDay, fetchParts, addMaintenanceLog,
+  fetchVehicles, updateVehicleOdo, updateAvgKmPerDay, updateVehicleInfo, addVehicle,
+  fetchParts, addMaintenanceLog,
 } from "@/lib/api";
 import { saveCache, loadCache } from "@/lib/offlineCache";
 import { vibrate } from "@/lib/haptics";
 import VehicleSwitcher from "@/components/VehicleSwitcher";
+import VehicleFormModal from "@/components/VehicleFormModal";
 import PinLock from "@/components/PinLock";
 
 const DAY_MS = 1000 * 60 * 60 * 24;
@@ -59,6 +61,8 @@ export default function HomePage() {
   const [odoModalOpen, setOdoModalOpen] = useState(false);
   const [avgKmModalOpen, setAvgKmModalOpen] = useState(false);
   const [serviceModalPart, setServiceModalPart] = useState(null);
+  const [vehicleFormMode, setVehicleFormMode] = useState(null); // null | "add" | "edit"
+  const [editingVehicle, setEditingVehicle] = useState(null);
   const [filter, setFilter] = useState("all");
 
   // --- Auth gate: chưa đăng nhập -> chuyển sang /login ---
@@ -147,6 +151,30 @@ export default function HomePage() {
     vibrate(10);
   }
 
+  // --- Thêm xe mới ---
+  async function handleAddVehicle(values) {
+    const newVehicle = await addVehicle(values);
+    const updatedVehicles = [...vehicles, newVehicle];
+    setVehicles(updatedVehicles);
+    setActiveVehicle(newVehicle);
+    localStorage.setItem(ACTIVE_VEHICLE_KEY, newVehicle.id);
+    setParts([]); // xe mới chưa có phụ tùng nào — có thể thêm tay trong Supabase Table Editor
+    saveCache({ vehicle: newVehicle, parts: [] });
+    setVehicleFormMode(null);
+  }
+
+  // --- Sửa thông tin xe (tên/hãng/dòng xe/biển số) ---
+  async function handleEditVehicle(values) {
+    const updated = await updateVehicleInfo(editingVehicle.id, values);
+    setVehicles((prev) => prev.map((v) => (v.id === updated.id ? updated : v)));
+    if (activeVehicle?.id === updated.id) {
+      setActiveVehicle(updated);
+      saveCache({ vehicle: updated, parts });
+    }
+    setVehicleFormMode(null);
+    setEditingVehicle(null);
+  }
+
   async function handleSaveService({ partId, date, odo, cost, note }) {
     await addMaintenanceLog({ partId, vehicleId: activeVehicle.id, date, odo, cost, note });
     const refreshed = await fetchParts(activeVehicle.id);
@@ -166,10 +194,21 @@ export default function HomePage() {
   if (!user) return null; // đang chuyển hướng sang /login
   if (!activeVehicle) {
     return (
-      <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center px-6">
-        <p className="text-sm text-[var(--text-muted)] text-center">
-          Chưa có xe nào. Thêm xe đầu tiên trong Supabase Table Editor hoặc dùng addVehicle() từ lib/api.js.
-        </p>
+      <div className="min-h-screen bg-[var(--bg)] flex flex-col items-center justify-center px-6 gap-4">
+        <p className="text-sm text-[var(--text-muted)] text-center">Bạn chưa có xe nào cả.</p>
+        <button
+          onClick={() => setVehicleFormMode("add")}
+          className="bg-[var(--accent)] text-[var(--accent-contrast)] font-semibold rounded-2xl px-5 py-3 text-sm"
+        >
+          + Thêm xe đầu tiên
+        </button>
+        {vehicleFormMode === "add" && (
+          <VehicleFormModal
+            mode="add"
+            onClose={() => setVehicleFormMode(null)}
+            onSave={handleAddVehicle}
+          />
+        )}
       </div>
     );
   }
@@ -196,7 +235,16 @@ export default function HomePage() {
                 </div>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                <VehicleSwitcher vehicles={vehicles} activeVehicle={activeVehicle} onSwitch={handleSwitchVehicle} />
+                <VehicleSwitcher
+                  vehicles={vehicles}
+                  activeVehicle={activeVehicle}
+                  onSwitch={handleSwitchVehicle}
+                  onAddVehicle={() => setVehicleFormMode("add")}
+                  onEditVehicle={(v) => {
+                    setEditingVehicle(v);
+                    setVehicleFormMode("edit");
+                  }}
+                />
                 <button
                   onClick={() => router.push("/stats")}
                   className="w-8 h-8 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center"
@@ -277,6 +325,27 @@ export default function HomePage() {
         )}
         {serviceModalPart && (
           <ServiceModal part={serviceModalPart} currentOdo={activeVehicle.current_odo} onClose={() => setServiceModalPart(null)} onSave={handleSaveService} />
+        )}
+
+        {vehicleFormMode === "add" && (
+          <VehicleFormModal
+            mode="add"
+            onClose={() => setVehicleFormMode(null)}
+            onSave={handleAddVehicle}
+          />
+        )}
+        {vehicleFormMode === "edit" && editingVehicle && (
+          <VehicleFormModal
+            mode="edit"
+            initialValues={{
+              name: editingVehicle.name,
+              brand: editingVehicle.brand,
+              model: editingVehicle.model,
+              plateNumber: editingVehicle.plate_number,
+            }}
+            onClose={() => { setVehicleFormMode(null); setEditingVehicle(null); }}
+            onSave={handleEditVehicle}
+          />
         )}
       </div>
     </PinLock>

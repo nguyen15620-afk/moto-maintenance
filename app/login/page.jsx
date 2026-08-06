@@ -13,6 +13,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Email hợp lệ mới cho bấm gửi mã — nút sẽ "sáng lên" (đổi từ mờ sang màu accent)
+  const isValidEmail = /^\S+@\S+\.\S+$/.test(email);
+  const isValidOtp = otp.length === 6;
+
   async function handleSendOtp(e) {
     e.preventDefault();
     setLoading(true);
@@ -67,8 +71,8 @@ export default function LoginPage() {
               />
             </div>
             <button
-              disabled={loading}
-              className="w-full bg-[var(--accent)] text-[#04141a] font-semibold rounded-2xl py-3.5 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+              disabled={loading || !isValidEmail}
+              className="w-full bg-[var(--accent)] disabled:opacity-30 disabled:grayscale text-[#04141a] font-semibold rounded-2xl py-3.5 flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-200"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />} Gửi mã đăng nhập
             </button>
@@ -89,8 +93,8 @@ export default function LoginPage() {
               className="w-full text-center tracking-[0.5em] text-2xl font-mono bg-[var(--surface)] border border-[var(--border)] rounded-2xl px-3.5 py-3 text-[var(--text)] focus:outline-none"
             />
             <button
-              disabled={loading}
-              className="w-full bg-[var(--accent)] text-[#04141a] font-semibold rounded-2xl py-3.5 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+              disabled={loading || !isValidOtp}
+              className="w-full bg-[var(--accent)] disabled:opacity-30 disabled:grayscale text-[#04141a] font-semibold rounded-2xl py-3.5 flex items-center justify-center gap-2 active:scale-[0.98] transition-all duration-200"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />} Xác nhận
             </button>
