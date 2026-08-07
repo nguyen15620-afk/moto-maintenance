@@ -1,26 +1,55 @@
-@import "tailwindcss";
+/* app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   Design tokens — TỰ ĐỘNG đổi theo prefers-color-scheme của hệ
+   điều hành (Cài đặt > Màn hình > Sáng/Tối trên iPhone), KHÔNG
+   cần JavaScript. Dùng trong JSX qua cú pháp Tailwind arbitrary
+   value: className="bg-[var(--bg)] text-[var(--text)]"
+   ============================================================ */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  --bg: #ffffff;
+  --surface: #f4f4f5;
+  --surface-2: #ececee;
+  --text: #18181b;
+  --text-muted: #71717a;
+  --border: rgba(0, 0, 0, 0.08);
+  --accent: #0891b2;
+  --accent-contrast: #ffffff;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --danger-text: #dc2626;
+  --danger-bg: #ef4444;
+  --warn-text: #b45309;
+  --warn-bg: #f59e0b;
+  --good-text: #15803d;
+  --good-bg: #22c55e;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg: #0b0f14;
+    --surface: #11161d;
+    --surface-2: #171d25;
+    --text: #f4f4f5;
+    --text-muted: #71717a;
+    --border: rgba(255, 255, 255, 0.06);
+    --accent: #22d3ee;
+    --accent-contrast: #04141a;
+
+    --danger-text: #fb7185;
+    --danger-bg: #f43f5e;
+    --warn-text: #fbbf24;
+    --warn-bg: #fbbf24;
+    --good-text: #34d399;
+    --good-bg: #34d399;
   }
 }
 
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
 }
