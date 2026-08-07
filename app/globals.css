@@ -1,7 +1,5 @@
 /* app/globals.css */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /* ============================================================
    Design tokens — TỰ ĐỘNG đổi theo prefers-color-scheme của hệ
