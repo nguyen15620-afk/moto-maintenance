@@ -20,6 +20,25 @@ import PinLock from "@/components/PinLock";
 const DAY_MS = 1000 * 60 * 60 * 24;
 const ACTIVE_VEHICLE_KEY = "motocare_active_vehicle";
 
+/**
+ * Tính ODO ƯỚC TÍNH tại thời điểm hiện tại — KHÔNG ghi vào DB, chỉ dùng để
+ * hiển thị và tính trạng thái phụ tùng "tự nhích" theo từng ngày.
+ * ODO thật (vehicle.current_odo) vẫn giữ nguyên cho tới khi người dùng tự
+ * bấm "Cập nhật" — tránh bị lệch số nếu có ngày không đi xe.
+ */
+function getEstimatedOdo(vehicle) {
+  if (!vehicle) return { estimatedOdo: 0, daysSinceUpdate: 0 };
+  const daysSinceUpdate = Math.floor(
+    (Date.now() - new Date(vehicle.odo_updated_at).getTime()) / DAY_MS
+  );
+  const safeDays = Math.max(daysSinceUpdate, 0); // phòng trường hợp lệch giờ/timezone ra số âm
+  const avg = vehicle.avg_km_per_day || 0;
+  return {
+    estimatedOdo: vehicle.current_odo + avg * safeDays,
+    daysSinceUpdate: safeDays,
+  };
+}
+
 function computePartStatus(part, currentOdo) {
   const today = new Date();
   const kmSince = currentOdo - part.last_service_odo;
@@ -114,12 +133,20 @@ export default function HomePage() {
     saveCache({ vehicle: v, parts: p });
   }
 
+  // ODO ước tính hôm nay — dùng để tính trạng thái/% hao mòn, "tự nhích" mỗi ngày
+  // mà không cần sửa current_odo thật trong DB (xem getEstimatedOdo() ở trên).
+  const { estimatedOdo, daysSinceUpdate } = useMemo(
+    () => getEstimatedOdo(activeVehicle),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeVehicle?.current_odo, activeVehicle?.odo_updated_at, activeVehicle?.avg_km_per_day]
+  );
+
   const partsWithStatus = useMemo(() => {
     if (!activeVehicle) return [];
     return parts
-      .map((part) => ({ ...part, ...computePartStatus(part, activeVehicle.current_odo) }))
+      .map((part) => ({ ...part, ...computePartStatus(part, estimatedOdo) }))
       .sort((a, b) => b.usedRatio - a.usedRatio);
-  }, [parts, activeVehicle]);
+  }, [parts, activeVehicle, estimatedOdo]);
 
   const summary = useMemo(
     () =>
@@ -267,14 +294,20 @@ export default function HomePage() {
               <div className="flex items-center gap-2.5">
                 <Gauge className="w-4 h-4 text-[var(--accent)]" />
                 <div className="text-left">
-                  <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">Số km hiện tại</div>
+                  <div className="text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+                    ODO ước tính hôm nay
+                  </div>
                   <div className="font-mono tabular-nums text-2xl font-bold text-[var(--accent)] tracking-wider">
-                    {formatKm(activeVehicle.current_odo)}
+                    {formatKm(Math.round(estimatedOdo))}
                     <span className="text-xs text-[var(--text-muted)] ml-1">km</span>
+                  </div>
+                  <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
+                    Đã ghi nhận thật: {formatKm(activeVehicle.current_odo)} km
+                    {daysSinceUpdate > 0 && ` · ${daysSinceUpdate} ngày trước`}
                   </div>
                 </div>
               </div>
-              <span className="flex items-center gap-1 text-xs font-medium text-[var(--accent)] bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1.5 rounded-full">
+              <span className="flex items-center gap-1 text-xs font-medium text-[var(--accent)] bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1.5 rounded-full shrink-0">
                 <Pencil className="w-3 h-3" /> Cập nhật
               </span>
             </button>
@@ -318,13 +351,13 @@ export default function HomePage() {
         </main>
 
         {odoModalOpen && (
-          <OdoModal currentOdo={activeVehicle.current_odo} onClose={() => setOdoModalOpen(false)} onSave={handleUpdateOdo} />
+          <OdoModal currentOdo={activeVehicle.current_odo} suggestedOdo={Math.round(estimatedOdo)} onClose={() => setOdoModalOpen(false)} onSave={handleUpdateOdo} />
         )}
         {avgKmModalOpen && (
           <AvgKmModal current={activeVehicle.avg_km_per_day || 20} onClose={() => setAvgKmModalOpen(false)} onSave={handleUpdateAvgKm} />
         )}
         {serviceModalPart && (
-          <ServiceModal part={serviceModalPart} currentOdo={activeVehicle.current_odo} onClose={() => setServiceModalPart(null)} onSave={handleSaveService} />
+          <ServiceModal part={serviceModalPart} currentOdo={Math.round(estimatedOdo)} onClose={() => setServiceModalPart(null)} onSave={handleSaveService} />
         )}
 
         {vehicleFormMode === "add" && (
@@ -437,8 +470,8 @@ function ModalShell({ title, onClose, children }) {
   );
 }
 
-function OdoModal({ currentOdo, onClose, onSave }) {
-  const [value, setValue] = useState(String(currentOdo));
+function OdoModal({ currentOdo, suggestedOdo, onClose, onSave }) {
+  const [value, setValue] = useState(String(suggestedOdo ?? currentOdo));
   const [saving, setSaving] = useState(false);
   const isValid = Number(value) >= currentOdo && value !== "";
 
@@ -449,7 +482,9 @@ function OdoModal({ currentOdo, onClose, onSave }) {
 
   return (
     <ModalShell title="Cập nhật ODO" onClose={onClose}>
-      <label className="text-xs text-[var(--text-muted)] mb-1.5 block">Số km hiện tại trên đồng hồ</label>
+      <label className="text-xs text-[var(--text-muted)] mb-1.5 block">
+        Số km hiện tại trên đồng hồ (gợi ý theo ước tính, sửa lại nếu khác)
+      </label>
       <input type="number" inputMode="numeric" autoFocus value={value} onChange={(e) => setValue(e.target.value)}
         className="w-full font-mono tabular-nums text-3xl font-bold bg-black/5 dark:bg-white/5 border border-[var(--border)] rounded-2xl px-4 py-3 text-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/50" />
       {!isValid && value !== "" && <p className="text-xs text-[var(--danger-text)] mt-2">ODO mới phải ≥ ODO hiện tại ({formatKm(currentOdo)} km)</p>}
