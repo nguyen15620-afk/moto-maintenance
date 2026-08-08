@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/AuthContext";
 import {
   fetchVehicles, updateVehicleOdo, updateAvgKmPerDay, updateVehicleInfo, addVehicle,
   fetchParts, addMaintenanceLog,
+  addPart, updatePart, deactivatePart, // ← thêm
 } from "@/lib/api";
 import { saveCache, loadCache } from "@/lib/offlineCache";
 import { vibrate } from "@/lib/haptics";
@@ -17,6 +18,8 @@ import VehicleSwitcher from "@/components/VehicleSwitcher";
 import VehicleFormModal from "@/components/VehicleFormModal";
 import PartHistoryModal from "@/components/PartHistoryModal";
 import PinLock from "@/components/PinLock";
+import PartFormModal from "@/components/PartFormModal";
+import { Trash2, Pencil, History, Wrench } from "lucide-react";
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 const ACTIVE_VEHICLE_KEY = "motocare_active_vehicle";
@@ -85,6 +88,9 @@ export default function HomePage() {
   const [editingVehicle, setEditingVehicle] = useState(null);
   const [historyModalPart, setHistoryModalPart] = useState(null); // part đang xem lịch sử
   const [filter, setFilter] = useState("all");
+
+  const [partFormMode, setPartFormMode] = useState(null); // null | "add" | "edit"
+  const [editingPart, setEditingPart] = useState(null);
 
   // --- Auth gate: chưa đăng nhập -> chuyển sang /login ---
   useEffect(() => {
@@ -227,6 +233,24 @@ export default function HomePage() {
     vibrate([10, 30, 10]);
   }
 
+  async function handleSavePart(values) {
+  if (editingPart) {
+    await updatePart(editingPart.id, values);
+  } else {
+    await addPart({ vehicleId: activeVehicle.id, ...values });
+  }
+  await refreshParts();
+  setPartFormMode(null);
+  setEditingPart(null);
+  vibrate([10, 30, 10]);
+}
+
+async function handleDeletePart(partId) {
+  await deactivatePart(partId);
+  await refreshParts();
+  vibrate(200);
+}
+
   if (authLoading || (loading && !activeVehicle)) {
     return (
       <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
@@ -350,9 +374,17 @@ export default function HomePage() {
           <section className="mt-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-[var(--text-muted)]">Danh sách phụ tùng</h2>
-              {filter !== "all" && (
-                <button onClick={() => setFilter("all")} className="text-xs text-[var(--accent)]">Xem tất cả</button>
-              )}
+              <div className="flex items-center gap-3">
+                {filter !== "all" && (
+                  <button onClick={() => setFilter("all")} className="text-xs text-[var(--accent)]">Xem tất cả</button>
+                )}
+                <button
+                  onClick={() => { vibrate(10); setEditingPart(null); setPartFormMode("add"); }}
+                  className="text-xs text-[var(--accent)] font-medium flex items-center gap-1"
+                >
+                  + Thêm phụ tùng
+                </button>
+              </div>
             </div>
 
             <div className="space-y-2.5">
@@ -366,6 +398,8 @@ export default function HomePage() {
                   avgKmPerDay={activeVehicle.avg_km_per_day || 20}
                   onMarkDone={() => { vibrate(10); setServiceModalPart(part); }}
                   onViewHistory={() => { vibrate(10); setHistoryModalPart(part); }}
+                  onEdit={() => { vibrate(10); setEditingPart(part); setPartFormMode("edit"); }}
+                  onDelete={() => handleDeletePart(part.id)}
                 />
               ))}
             </div>
@@ -409,6 +443,19 @@ export default function HomePage() {
             onSave={handleEditVehicle}
           />
         )}
+
+        {partFormMode && (
+          <PartFormModal
+            mode={partFormMode}
+            initialValues={
+              editingPart
+                ? { name: editingPart.name, intervalKm: editingPart.interval_km, intervalMonths: editingPart.interval_months }
+                : { currentOdo: Math.round(estimatedOdo) }
+            }
+            onClose={() => { setPartFormMode(null); setEditingPart(null); }}
+            onSave={handleSavePart}
+          />
+        )}
       </div>
     </PinLock>
   );
@@ -428,14 +475,11 @@ function SummaryChip({ icon, count, label, cfg, active, onClick }) {
   );
 }
 
-function PartCard({ part, avgKmPerDay, onMarkDone, onViewHistory }) {
+function PartCard({ part, avgKmPerDay, onMarkDone, onViewHistory, onEdit, onDelete }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const cfg = STATUS_CONFIG[part.status];
   const pct = Math.min(Math.round(part.usedRatio * 100), 100);
 
-  // --- Smart Forecasting: quy đổi số km còn lại -> số ngày ước tính ---
-  // Nếu phụ tùng có cả trục thời gian riêng (VD: ắc quy), lấy ngày NHỎ HƠN
-  // giữa (remainingKm / avgKmPerDay) và remainingDaysByTime — đúng logic
-  // worst-case đã dùng khi tính trạng thái.
   const forecastDaysByKm = part.remainingKm !== null ? Math.round(part.remainingKm / avgKmPerDay) : null;
   const candidates = [forecastDaysByKm, part.remainingDaysByTime].filter((d) => d !== null);
   const forecastDays = candidates.length ? Math.min(...candidates) : null;
@@ -464,6 +508,25 @@ function PartCard({ part, avgKmPerDay, onMarkDone, onViewHistory }) {
           <button onClick={onViewHistory} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" title="Xem lịch sử">
             <History className="w-3.5 h-3.5 text-[var(--text-muted)]" />
           </button>
+          <button onClick={onEdit} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" title="Sửa phụ tùng">
+            <Pencil className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+          </button>
+          {confirmDelete ? (
+            <button
+              onClick={() => { onDelete(); setConfirmDelete(false); }}
+              className="h-8 px-2 rounded-full bg-[var(--danger-bg)] text-white text-[10px] font-medium whitespace-nowrap"
+            >
+              Xoá?
+            </button>
+          ) : (
+            <button
+              onClick={() => { vibrate(10); setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 3000); }}
+              className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center"
+              title="Xoá phụ tùng"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-[var(--danger-text)]" />
+            </button>
+          )}
           <button onClick={onMarkDone} className="flex items-center gap-1 text-xs font-medium bg-[var(--accent)] text-[var(--accent-contrast)] active:scale-95 transition-all px-2.5 py-1.5 rounded-full whitespace-nowrap">
             <Wrench className="w-3 h-3" /> Đã làm
           </button>
