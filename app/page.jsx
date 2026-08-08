@@ -100,6 +100,11 @@ export default function HomePage() {
       const current = vs.find((v) => v.id === savedId) || vs[0];
       const p = await fetchParts(current.id);
 
+      // Luôn đồng bộ lại localStorage với xe đang thực sự active — kể cả khi
+      // rơi vào trường hợp fallback vs[0] (chưa từng bấm "Đổi xe") hoặc xe đã
+      // lưu trước đó không còn tồn tại (bị xoá) — tránh /stats đọc nhầm ID cũ.
+      localStorage.setItem(ACTIVE_VEHICLE_KEY, current.id);
+
       setVehicles(vs);
       setActiveVehicle(current);
       setParts(p);

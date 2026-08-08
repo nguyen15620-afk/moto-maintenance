@@ -19,7 +19,7 @@ export default function CostReportPage() {
   const [yearSummary, setYearSummary] = useState({ totalCost: 0, serviceCount: 0 });
 
   useEffect(() => {
-    (async () => {
+    async function load() {
       const vehicles = await fetchVehicles();
       const activeId = localStorage.getItem("motocare_active_vehicle") || vehicles[0]?.id;
       if (!activeId) return setLoading(false);
@@ -33,7 +33,20 @@ export default function CostReportPage() {
       setTopParts(t.filter((p) => p.total_cost > 0));
       setYearSummary(y);
       setLoading(false);
-    })();
+    }
+
+    load();
+
+    // Tự tải lại khi người dùng quay lại tab/trang này (VD: vừa thêm chi phí
+    // ở Dashboard rồi bấm vào biểu đồ 📊 mà không reload cả trang)
+    function handleFocus() {
+      load();
+    }
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") load();
+    });
+    return () => window.removeEventListener("focus", handleFocus);
   }, []);
 
   const maxMonthly = Math.max(...monthly.map((m) => m.total_cost), 1);
