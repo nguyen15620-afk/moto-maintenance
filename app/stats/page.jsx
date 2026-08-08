@@ -21,7 +21,13 @@ export default function CostReportPage() {
   useEffect(() => {
     async function load() {
       const vehicles = await fetchVehicles();
-      const activeId = localStorage.getItem("motocare_active_vehicle") || vehicles[0]?.id;
+      const savedId = localStorage.getItem("motocare_active_vehicle");
+      // Không tin mù quáng giá trị trong localStorage — chỉ dùng nếu ID đó
+      // THỰC SỰ nằm trong danh sách xe của tài khoản đang đăng nhập (tránh
+      // trường hợp localStorage còn sót ID từ tài khoản/xe khác đã test trước đó).
+      const activeVehicle = vehicles.find((v) => v.id === savedId) || vehicles[0];
+      const activeId = activeVehicle?.id;
+      if (activeId) localStorage.setItem("motocare_active_vehicle", activeId); // tự sửa lại nếu sai
       if (!activeId) return setLoading(false);
 
       const [m, t, y] = await Promise.all([
