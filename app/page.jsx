@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bike, Gauge, Pencil, X, CheckCircle2, AlertTriangle, AlertCircle,
-  Wrench, Calendar, Coins, StickyNote, Loader2, BarChart3, LogOut, WifiOff, Gauge as SpeedIcon,
+  Wrench, Calendar, Coins, StickyNote, Loader2, BarChart3, LogOut, WifiOff, Gauge as SpeedIcon, History,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -15,6 +15,7 @@ import { saveCache, loadCache } from "@/lib/offlineCache";
 import { vibrate } from "@/lib/haptics";
 import VehicleSwitcher from "@/components/VehicleSwitcher";
 import VehicleFormModal from "@/components/VehicleFormModal";
+import PartHistoryModal from "@/components/PartHistoryModal";
 import PinLock from "@/components/PinLock";
 
 const DAY_MS = 1000 * 60 * 60 * 24;
@@ -82,6 +83,7 @@ export default function HomePage() {
   const [serviceModalPart, setServiceModalPart] = useState(null);
   const [vehicleFormMode, setVehicleFormMode] = useState(null); // null | "add" | "edit"
   const [editingVehicle, setEditingVehicle] = useState(null);
+  const [historyModalPart, setHistoryModalPart] = useState(null); // part đang xem lịch sử
   const [filter, setFilter] = useState("all");
 
   // --- Auth gate: chưa đăng nhập -> chuyển sang /login ---
@@ -161,6 +163,15 @@ export default function HomePage() {
   );
 
   const filteredParts = filter === "all" ? partsWithStatus : partsWithStatus.filter((p) => p.status === filter);
+
+  // Gọi lại fetchParts cho xe đang chọn — dùng sau khi thêm/sửa/xoá log,
+  // vì trigger DB có thể đã tính lại last_service_odo/last_service_date.
+  const refreshParts = useCallback(async () => {
+    if (!activeVehicle) return;
+    const p = await fetchParts(activeVehicle.id);
+    setParts(p);
+    saveCache({ vehicle: activeVehicle, parts: p });
+  }, [activeVehicle]);
 
   async function handleUpdateOdo(newOdo) {
     const updated = await updateVehicleOdo(activeVehicle.id, newOdo);
@@ -344,7 +355,13 @@ export default function HomePage() {
                 <p className="text-sm text-[var(--text-muted)] text-center py-10">Không có phụ tùng nào ở trạng thái này 🎉</p>
               )}
               {filteredParts.map((part) => (
-                <PartCard key={part.id} part={part} avgKmPerDay={activeVehicle.avg_km_per_day || 20} onMarkDone={() => { vibrate(10); setServiceModalPart(part); }} />
+                <PartCard
+                  key={part.id}
+                  part={part}
+                  avgKmPerDay={activeVehicle.avg_km_per_day || 20}
+                  onMarkDone={() => { vibrate(10); setServiceModalPart(part); }}
+                  onViewHistory={() => { vibrate(10); setHistoryModalPart(part); }}
+                />
               ))}
             </div>
           </section>
@@ -358,6 +375,13 @@ export default function HomePage() {
         )}
         {serviceModalPart && (
           <ServiceModal part={serviceModalPart} currentOdo={Math.round(estimatedOdo)} onClose={() => setServiceModalPart(null)} onSave={handleSaveService} />
+        )}
+        {historyModalPart && (
+          <PartHistoryModal
+            part={historyModalPart}
+            onClose={() => setHistoryModalPart(null)}
+            onChanged={refreshParts}
+          />
         )}
 
         {vehicleFormMode === "add" && (
@@ -399,7 +423,7 @@ function SummaryChip({ icon, count, label, cfg, active, onClick }) {
   );
 }
 
-function PartCard({ part, avgKmPerDay, onMarkDone }) {
+function PartCard({ part, avgKmPerDay, onMarkDone, onViewHistory }) {
   const cfg = STATUS_CONFIG[part.status];
   const pct = Math.min(Math.round(part.usedRatio * 100), 100);
 
@@ -431,9 +455,14 @@ function PartCard({ part, avgKmPerDay, onMarkDone }) {
             Lần cuối: {formatKm(part.last_service_odo)} km · {formatDateVN(part.last_service_date)}
           </p>
         </div>
-        <button onClick={onMarkDone} className="shrink-0 flex items-center gap-1 text-xs font-medium bg-[var(--accent)] text-[var(--accent-contrast)] active:scale-95 transition-all px-2.5 py-1.5 rounded-full whitespace-nowrap">
-          <Wrench className="w-3 h-3" /> Đã làm
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button onClick={onViewHistory} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" title="Xem lịch sử">
+            <History className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+          </button>
+          <button onClick={onMarkDone} className="flex items-center gap-1 text-xs font-medium bg-[var(--accent)] text-[var(--accent-contrast)] active:scale-95 transition-all px-2.5 py-1.5 rounded-full whitespace-nowrap">
+            <Wrench className="w-3 h-3" /> Đã làm
+          </button>
+        </div>
       </div>
       <div className="mt-3">
         <div className="h-2 rounded-full bg-black/5 dark:bg-white/5 overflow-hidden">
