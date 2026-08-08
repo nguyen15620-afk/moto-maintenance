@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bike, Gauge, Pencil, X, CheckCircle2, AlertTriangle, AlertCircle,
-  Wrench, Calendar, Coins, StickyNote, Loader2, BarChart3, LogOut, WifiOff, Gauge as SpeedIcon, History,
+  Wrench, Calendar, Coins, StickyNote, Loader2, BarChart3, LogOut, WifiOff, Gauge as SpeedIcon, History,Trash2, Pencil, History, Wrench
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -19,7 +19,6 @@ import VehicleFormModal from "@/components/VehicleFormModal";
 import PartHistoryModal from "@/components/PartHistoryModal";
 import PinLock from "@/components/PinLock";
 import PartFormModal from "@/components/PartFormModal";
-import { Trash2, Pencil, History, Wrench } from "lucide-react";
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 const ACTIVE_VEHICLE_KEY = "motocare_active_vehicle";
