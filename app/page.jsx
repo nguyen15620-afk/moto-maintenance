@@ -4,7 +4,8 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bike, Gauge, Pencil, X, CheckCircle2, AlertTriangle, AlertCircle,
-  Wrench, Calendar, Coins, StickyNote, Loader2, BarChart3, LogOut, WifiOff, Gauge as SpeedIcon, History,Trash2
+  Wrench, Calendar, Coins, StickyNote, Loader2, BarChart3, LogOut, WifiOff, Gauge as SpeedIcon, History, Trash2,
+  ArrowUp, ArrowDown, ListOrdered, SlidersHorizontal
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -12,6 +13,7 @@ import {
   fetchParts, addMaintenanceLog,
   addPart, updatePart, deactivatePart,
   fetchFuelLogs, addFuelLog, updateFuelLog, deleteFuelLog,
+  swapPartOrder,
 } from "@/lib/api";
 import { saveCache, loadCache } from "@/lib/offlineCache";
 import { vibrate } from "@/lib/haptics";
@@ -90,6 +92,7 @@ export default function HomePage() {
   const [editingVehicle, setEditingVehicle] = useState(null);
   const [historyModalPart, setHistoryModalPart] = useState(null); // part đang xem lịch sử
   const [filter, setFilter] = useState("all");
+  const [sortMode, setSortMode] = useState("status"); // "status" | "custom"
 
   const [partFormMode, setPartFormMode] = useState(null); // null | "add" | "edit"
   const [editingPart, setEditingPart] = useState(null);
@@ -170,6 +173,11 @@ export default function HomePage() {
       .sort((a, b) => b.usedRatio - a.usedRatio);
   }, [parts, activeVehicle, estimatedOdo]);
 
+  const customSortedParts = useMemo(
+  () => [...partsWithStatus].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)),
+  [partsWithStatus]
+  );
+
   const summary = useMemo(
     () =>
       partsWithStatus.reduce(
@@ -183,6 +191,7 @@ export default function HomePage() {
   );
 
   const filteredParts = filter === "all" ? partsWithStatus : partsWithStatus.filter((p) => p.status === filter);
+  const displayedParts = sortMode === "custom" ? customSortedParts : filteredParts;
 
   // Gọi lại fetchParts cho xe đang chọn — dùng sau khi thêm/sửa/xoá log,
   // vì trigger DB có thể đã tính lại last_service_odo/last_service_date.
@@ -277,6 +286,34 @@ async function handleDeletePart(partId) {
   await deactivatePart(partId);
   await refreshParts();
   vibrate(200);
+}
+
+async function handleMovePart(partId, direction) {
+  const sorted = [...parts].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const idx = sorted.findIndex((p) => p.id === partId);
+  const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (idx === -1 || targetIdx < 0 || targetIdx >= sorted.length) return;
+
+  const a = sorted[idx];
+  const b = sorted[targetIdx];
+  vibrate(10);
+
+  // Cập nhật lạc quan (optimistic) để UI phản hồi ngay, không đợi network
+  setParts((prev) =>
+    prev.map((p) => {
+      if (p.id === a.id) return { ...p, sort_order: b.sort_order };
+      if (p.id === b.id) return { ...p, sort_order: a.sort_order };
+      return p;
+    })
+  );
+
+  try {
+    await swapPartOrder(a, b);
+  } catch (err) {
+    console.error(err);
+    // Lỗi mạng/RLS -> tải lại từ server để đồng bộ lại đúng thứ tự thật
+    await refreshParts();
+  }
 }
 
   if (authLoading || (loading && !activeVehicle)) {
@@ -393,19 +430,29 @@ async function handleDeletePart(partId) {
         </header>
 
         <main className="max-w-md mx-auto px-4">
-          <section className="grid grid-cols-3 gap-2 mt-4">
-            <SummaryChip active={filter === "red"} onClick={() => setFilter(filter === "red" ? "all" : "red")} icon={<AlertCircle className="w-4 h-4" />} count={summary.red} label="Cần gấp" cfg={STATUS_CONFIG.red} />
-            <SummaryChip active={filter === "yellow"} onClick={() => setFilter(filter === "yellow" ? "all" : "yellow")} icon={<AlertTriangle className="w-4 h-4" />} count={summary.yellow} label="Sắp tới" cfg={STATUS_CONFIG.yellow} />
-            <SummaryChip active={filter === "green"} onClick={() => setFilter(filter === "green" ? "all" : "green")} icon={<CheckCircle2 className="w-4 h-4" />} count={summary.green} label="An toàn" cfg={STATUS_CONFIG.green} />
-          </section>
+          {sortMode === "status" && (
+            <section className="grid grid-cols-3 gap-2 mt-4">
+              <SummaryChip active={filter === "red"} onClick={() => setFilter(filter === "red" ? "all" : "red")} icon={<AlertCircle className="w-4 h-4" />} count={summary.red} label="Cần gấp" cfg={STATUS_CONFIG.red} />
+              <SummaryChip active={filter === "yellow"} onClick={() => setFilter(filter === "yellow" ? "all" : "yellow")} icon={<AlertTriangle className="w-4 h-4" />} count={summary.yellow} label="Sắp tới" cfg={STATUS_CONFIG.yellow} />
+              <SummaryChip active={filter === "green"} onClick={() => setFilter(filter === "green" ? "all" : "green")} icon={<CheckCircle2 className="w-4 h-4" />} count={summary.green} label="An toàn" cfg={STATUS_CONFIG.green} />
+            </section>
+          )}
 
           <section className="mt-5">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-[var(--text-muted)]">Danh sách phụ tùng</h2>
               <div className="flex items-center gap-3">
-                {filter !== "all" && (
+                {sortMode === "status" && filter !== "all" && (
                   <button onClick={() => setFilter("all")} className="text-xs text-[var(--accent)]">Xem tất cả</button>
                 )}
+                <button
+                  onClick={() => { vibrate(10); setSortMode((m) => (m === "status" ? "custom" : "status")); }}
+                  className="text-xs text-[var(--accent)] font-medium flex items-center gap-1"
+                  title={sortMode === "status" ? "Chuyển sang sắp xếp thủ công" : "Chuyển về sắp theo mức độ cần thiết"}
+                >
+                  {sortMode === "status" ? <ListOrdered className="w-3.5 h-3.5" /> : <SlidersHorizontal className="w-3.5 h-3.5" />}
+                  {sortMode === "status" ? "Sắp xếp" : "Xong"}
+                </button>
                 <button
                   onClick={() => { vibrate(10); setEditingPart(null); setPartFormMode("add"); }}
                   className="text-xs text-[var(--accent)] font-medium flex items-center gap-1"
@@ -423,10 +470,10 @@ async function handleDeletePart(partId) {
             />
 
             <div className="space-y-2.5">
-              {filteredParts.length === 0 && (
+              {displayedParts.length === 0 && (
                 <p className="text-sm text-[var(--text-muted)] text-center py-10">Không có phụ tùng nào ở trạng thái này 🎉</p>
               )}
-              {filteredParts.map((part) => (
+              {displayedParts.map((part, index) => (
                 <PartCard
                   key={part.id}
                   part={part}
@@ -435,6 +482,11 @@ async function handleDeletePart(partId) {
                   onViewHistory={() => { vibrate(10); setHistoryModalPart(part); }}
                   onEdit={() => { vibrate(10); setEditingPart(part); setPartFormMode("edit"); }}
                   onDelete={() => handleDeletePart(part.id)}
+                  reorderMode={sortMode === "custom"}
+                  onMoveUp={() => handleMovePart(part.id, "up")}
+                  onMoveDown={() => handleMovePart(part.id, "down")}
+                  isFirst={index === 0}
+                  isLast={index === displayedParts.length - 1}
                 />
               ))}
             </div>
@@ -530,7 +582,7 @@ function SummaryChip({ icon, count, label, cfg, active, onClick }) {
   );
 }
 
-function PartCard({ part, avgKmPerDay, onMarkDone, onViewHistory, onEdit, onDelete }) {
+function PartCard({ part, avgKmPerDay, onMarkDone, onViewHistory, onEdit, onDelete, reorderMode, onMoveUp, onMoveDown, isFirst, isLast }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const cfg = STATUS_CONFIG[part.status];
   const pct = Math.min(Math.round(part.usedRatio * 100), 100);
@@ -559,46 +611,69 @@ function PartCard({ part, avgKmPerDay, onMarkDone, onViewHistory, onEdit, onDele
             Lần cuối: {formatKm(part.last_service_odo)} km · {formatDateVN(part.last_service_date)}
           </p>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button onClick={onViewHistory} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" title="Xem lịch sử">
-            <History className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-          </button>
-          <button onClick={onEdit} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" title="Sửa phụ tùng">
-            <Pencil className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-          </button>
-          {confirmDelete ? (
+
+        {reorderMode ? (
+          <div className="flex items-center gap-1 shrink-0">
             <button
-              onClick={() => { onDelete(); setConfirmDelete(false); }}
-              className="h-8 px-2 rounded-full bg-[var(--danger-bg)] text-white text-[10px] font-medium whitespace-nowrap"
+              onClick={onMoveUp}
+              disabled={isFirst}
+              className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center disabled:opacity-30"
             >
-              Xoá?
+              <ArrowUp className="w-3.5 h-3.5 text-[var(--text-muted)]" />
             </button>
-          ) : (
             <button
-              onClick={() => { vibrate(10); setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 3000); }}
-              className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center"
-              title="Xoá phụ tùng"
+              onClick={onMoveDown}
+              disabled={isLast}
+              className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center disabled:opacity-30"
             >
-              <Trash2 className="w-3.5 h-3.5 text-[var(--danger-text)]" />
+              <ArrowDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />
             </button>
-          )}
-          <button onClick={onMarkDone} className="flex items-center gap-1 text-xs font-medium bg-[var(--accent)] text-[var(--accent-contrast)] active:scale-95 transition-all px-2.5 py-1.5 rounded-full whitespace-nowrap">
-            <Wrench className="w-3 h-3" /> Đã làm
-          </button>
-        </div>
-      </div>
-      <div className="mt-3">
-        <div className="h-2 rounded-full bg-black/5 dark:bg-white/5 overflow-hidden">
-          <div className={`h-full rounded-full ${cfg.bg} transition-all duration-500`} style={{ width: `${pct}%` }} />
-        </div>
-        <div className="flex items-center justify-between mt-1.5">
-          <span className={`text-xs font-medium ${cfg.text}`}>{cfg.label} · {pct}%</span>
-          <span className="text-xs text-[var(--text-muted)]">{remainingText}</span>
-        </div>
-        {forecastText && (
-          <div className="text-[11px] text-[var(--text-muted)] mt-1">📅 {forecastText} (theo {avgKmPerDay} km/ngày)</div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button onClick={onViewHistory} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" title="Xem lịch sử">
+              <History className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+            </button>
+            <button onClick={onEdit} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" title="Sửa phụ tùng">
+              <Pencil className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+            </button>
+            {confirmDelete ? (
+              <button
+                onClick={() => { onDelete(); setConfirmDelete(false); }}
+                className="h-8 px-2 rounded-full bg-[var(--danger-bg)] text-white text-[10px] font-medium whitespace-nowrap"
+              >
+                Xoá?
+              </button>
+            ) : (
+              <button
+                onClick={() => { vibrate(10); setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 3000); }}
+                className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center"
+                title="Xoá phụ tùng"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-[var(--danger-text)]" />
+              </button>
+            )}
+            <button onClick={onMarkDone} className="flex items-center gap-1 text-xs font-medium bg-[var(--accent)] text-[var(--accent-contrast)] active:scale-95 transition-all px-2.5 py-1.5 rounded-full whitespace-nowrap">
+              <Wrench className="w-3 h-3" /> Đã làm
+            </button>
+          </div>
         )}
       </div>
+
+      {!reorderMode && (
+        <div className="mt-3">
+          <div className="h-2 rounded-full bg-black/5 dark:bg-white/5 overflow-hidden">
+            <div className={`h-full rounded-full ${cfg.bg} transition-all duration-500`} style={{ width: `${pct}%` }} />
+          </div>
+          <div className="flex items-center justify-between mt-1.5">
+            <span className={`text-xs font-medium ${cfg.text}`}>{cfg.label} · {pct}%</span>
+            <span className="text-xs text-[var(--text-muted)]">{remainingText}</span>
+          </div>
+          {forecastText && (
+            <div className="text-[11px] text-[var(--text-muted)] mt-1">📅 {forecastText} (theo {avgKmPerDay} km/ngày)</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
