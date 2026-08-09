@@ -14,7 +14,7 @@ import {
   fetchParts, addMaintenanceLog,
   addPart, updatePart, deactivatePart,
   fetchFuelLogs, addFuelLog, updateFuelLog, deleteFuelLog,
-  swapPartOrder,
+  swapPartOrder, addDefaultParts,
 } from "@/lib/api";
 import { saveCache, loadCache } from "@/lib/offlineCache";
 import { vibrate } from "@/lib/haptics";
@@ -295,15 +295,28 @@ const runSync = useCallback(async () => {
 
   // --- Thêm xe mới ---
   async function handleAddVehicle(values) {
-    const newVehicle = await addVehicle(values);
-    const updatedVehicles = [...vehicles, newVehicle];
-    setVehicles(updatedVehicles);
-    setActiveVehicle(newVehicle);
-    localStorage.setItem(ACTIVE_VEHICLE_KEY, newVehicle.id);
-    setParts([]); // xe mới chưa có phụ tùng nào — có thể thêm tay trong Supabase Table Editor
+  const newVehicle = await addVehicle(values);
+  const updatedVehicles = [...vehicles, newVehicle];
+  setVehicles(updatedVehicles);
+  setActiveVehicle(newVehicle);
+  localStorage.setItem(ACTIVE_VEHICLE_KEY, newVehicle.id);
+
+  try {
+    const defaultParts = await addDefaultParts(newVehicle.id, values.currentOdo || 0);
+    const sorted = defaultParts.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    setParts(sorted);
+    saveCache({ vehicle: newVehicle, parts: sorted });
+  } catch (err) {
+    console.error(err);
+    // Seed lỗi (VD: mất mạng đúng lúc) -> vẫn cho xe được tạo bình thường,
+    // người dùng tự thêm tay bằng nút "+ Thêm phụ tùng" như trước đây.
+    setParts([]);
     saveCache({ vehicle: newVehicle, parts: [] });
-    setVehicleFormMode(null);
   }
+
+  setFuelLogs([]); // xe mới chưa có lần đổ xăng nào — tránh hiện sót dữ liệu xe trước
+  setVehicleFormMode(null);
+}
 
   // --- Sửa thông tin xe (tên/hãng/dòng xe/biển số) ---
   async function handleEditVehicle(values) {
