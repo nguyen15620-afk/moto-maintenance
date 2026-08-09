@@ -494,19 +494,16 @@ async function handleMovePart(partId, direction) {
         </main>
 
         {odoModalOpen && (
-          <OdoModal currentOdo={activeVehicle.current_odo} suggestedOdo={Math.round(estimatedOdo)} onClose={() => setOdoModalOpen(false)} onSave={handleUpdateOdo} />
-        )}
-        {avgKmModalOpen && (
-          <AvgKmModal current={activeVehicle.avg_km_per_day || 20} onClose={() => setAvgKmModalOpen(false)} onSave={handleUpdateAvgKm} />
-        )}
-        {serviceModalPart && (
-          <ServiceModal part={serviceModalPart} currentOdo={Math.round(estimatedOdo)} onClose={() => setServiceModalPart(null)} onSave={handleSaveService} />
-        )}
-        {historyModalPart && (
-          <PartHistoryModal
-            part={historyModalPart}
-            onClose={() => setHistoryModalPart(null)}
-            onChanged={refreshParts}
+          <OdoModal
+            currentOdo={activeVehicle.current_odo}
+            suggestedOdo={Math.round(estimatedOdo)}
+            minAllowedOdo={Math.max(
+              0,
+              ...parts.map((p) => p.last_service_odo || 0),
+              ...fuelLogs.map((f) => f.odo_at_fill || 0)
+            )}
+            onClose={() => setOdoModalOpen(false)}
+            onSave={handleUpdateOdo}
           />
         )}
 
@@ -697,14 +694,18 @@ function ModalShell({ title, onClose, children }) {
   );
 }
 
-function OdoModal({ currentOdo, suggestedOdo, onClose, onSave }) {
+function OdoModal({ currentOdo, suggestedOdo, minAllowedOdo, onClose, onSave }) {
   const [value, setValue] = useState(String(suggestedOdo ?? currentOdo));
   const [saving, setSaving] = useState(false);
-  const isValid = Number(value) >= currentOdo && value !== "";
+  const [correctionMode, setCorrectionMode] = useState(false);
+
+  const numValue = Number(value);
+  const isValid = value !== "" && (correctionMode ? numValue >= minAllowedOdo : numValue >= currentOdo);
+  const isLowering = value !== "" && numValue < currentOdo;
 
   async function handleSave() {
     setSaving(true);
-    try { await onSave(Number(value)); } finally { setSaving(false); }
+    try { await onSave(numValue); } finally { setSaving(false); }
   }
 
   return (
@@ -712,11 +713,58 @@ function OdoModal({ currentOdo, suggestedOdo, onClose, onSave }) {
       <label className="text-xs text-[var(--text-muted)] mb-1.5 block">
         Số km hiện tại trên đồng hồ (gợi ý theo ước tính, sửa lại nếu khác)
       </label>
-      <input type="number" inputMode="numeric" autoFocus value={value} onChange={(e) => setValue(e.target.value)}
-        className="w-full font-mono tabular-nums text-3xl font-bold bg-black/5 dark:bg-white/5 border border-[var(--border)] rounded-2xl px-4 py-3 text-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/50" />
-      {!isValid && value !== "" && <p className="text-xs text-[var(--danger-text)] mt-2">ODO mới phải ≥ ODO hiện tại ({formatKm(currentOdo)} km)</p>}
-      <button disabled={!isValid || saving} onClick={handleSave}
-        className="w-full mt-5 bg-[var(--accent)] disabled:opacity-40 text-[var(--accent-contrast)] font-semibold rounded-2xl py-3.5 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+      <input
+        type="number"
+        inputMode="numeric"
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="w-full font-mono tabular-nums text-3xl font-bold bg-black/5 dark:bg-white/5 border border-[var(--border)] rounded-2xl px-4 py-3 text-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/50"
+      />
+
+      {!correctionMode && !isValid && value !== "" && (
+        <p className="text-xs text-[var(--danger-text)] mt-2">
+          ODO mới phải ≥ ODO hiện tại ({formatKm(currentOdo)} km)
+        </p>
+      )}
+
+      {!correctionMode && isLowering && (
+        <button
+          type="button"
+          onClick={() => { vibrate(10); setCorrectionMode(true); }}
+          className="text-xs text-[var(--accent)] mt-2 underline"
+        >
+          Gõ nhầm số lớn hơn thực tế? Bấm để sửa lại ODO thấp hơn
+        </button>
+      )}
+
+      {correctionMode && (
+        <div className="mt-2 rounded-2xl bg-[var(--warn-bg)]/10 border border-[var(--warn-bg)]/30 p-3">
+          <p className="text-xs text-[var(--warn-text)]">
+            ⚠️ Đang ở chế độ sửa lỗi — cho phép nhập ODO thấp hơn ODO hiện tại.
+            ODO mới vẫn phải ≥ <b>{formatKm(minAllowedOdo)} km</b> (ODO lớn nhất từng
+            ghi trong lịch sử bảo dưỡng/đổ xăng), nếu không các bản ghi cũ sẽ bị lệch.
+          </p>
+          {!isValid && value !== "" && (
+            <p className="text-xs text-[var(--danger-text)] mt-1.5">
+              ODO mới phải ≥ {formatKm(minAllowedOdo)} km
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => { setCorrectionMode(false); setValue(String(suggestedOdo ?? currentOdo)); }}
+            className="text-xs text-[var(--text-muted)] mt-1.5 underline"
+          >
+            Huỷ chế độ sửa lỗi
+          </button>
+        </div>
+      )}
+
+      <button
+        disabled={!isValid || saving}
+        onClick={handleSave}
+        className="w-full mt-5 bg-[var(--accent)] disabled:opacity-40 text-[var(--accent-contrast)] font-semibold rounded-2xl py-3.5 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+      >
         {saving && <Loader2 className="w-4 h-4 animate-spin" />} Lưu ODO mới
       </button>
     </ModalShell>
