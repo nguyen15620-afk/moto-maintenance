@@ -151,18 +151,18 @@ export default function HomePage() {
   }, [user, loadData]);
 
   // Đếm số item đang chờ ngay khi vào app (VD: đóng app lúc offline, mở lại vẫn còn hàng chờ)
-useEffect(() => {
-  refreshSyncCount();
-}, [refreshSyncCount]);
+  useEffect(() => {
+    refreshSyncCount();
+  }, [refreshSyncCount]);
 
-// Tự động thử đồng bộ khi có mạng trở lại, và khi xe active đã sẵn sàng
-useEffect(() => {
-  function handleOnline() { runSync(); }
-  window.addEventListener("online", handleOnline);
-  if (activeVehicle) runSync();
-  return () => window.removeEventListener("online", handleOnline);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [activeVehicle?.id]);
+  // Tự động thử đồng bộ khi có mạng trở lại, và khi xe active đã sẵn sàng
+  useEffect(() => {
+    function handleOnline() { runSync(); }
+    window.addEventListener("online", handleOnline);
+    if (activeVehicle) runSync();
+    return () => window.removeEventListener("online", handleOnline);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeVehicle?.id]);
 
   // --- Chuyển xe ---
   async function handleSwitchVehicle(vehicleId) {
