@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   Bike, Gauge, Pencil, X, CheckCircle2, AlertTriangle, AlertCircle,
   Wrench, Calendar, Coins, StickyNote, Loader2, BarChart3, LogOut, WifiOff, Gauge as SpeedIcon, History, Trash2,
-  ArrowUp, ArrowDown, ListOrdered, SlidersHorizontal
+  ArrowUp, ArrowDown, ListOrdered, SlidersHorizontal,
+  CloudOff, RefreshCw,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -24,6 +25,7 @@ import PinLock from "@/components/PinLock";
 import PartFormModal from "@/components/PartFormModal";
 import FuelSection from "@/components/FuelSection";
 import FuelFormModal from "@/components/FuelFormModal";
+import { getQueue, enqueue, processQueue, isLikelyNetworkError } from "@/lib/syncQueue";
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 const ACTIVE_VEHICLE_KEY = "motocare_active_vehicle";
@@ -100,6 +102,9 @@ export default function HomePage() {
   const [fuelFormMode, setFuelFormMode] = useState(null); // null | "add" | "edit"
   const [editingFuelLog, setEditingFuelLog] = useState(null);
 
+  const [syncPendingCount, setSyncPendingCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+
   // --- Auth gate: chưa đăng nhập -> chuyển sang /login ---
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -144,6 +149,20 @@ export default function HomePage() {
   useEffect(() => {
     if (user) loadData();
   }, [user, loadData]);
+
+  // Đếm số item đang chờ ngay khi vào app (VD: đóng app lúc offline, mở lại vẫn còn hàng chờ)
+useEffect(() => {
+  refreshSyncCount();
+}, [refreshSyncCount]);
+
+// Tự động thử đồng bộ khi có mạng trở lại, và khi xe active đã sẵn sàng
+useEffect(() => {
+  function handleOnline() { runSync(); }
+  window.addEventListener("online", handleOnline);
+  if (activeVehicle) runSync();
+  return () => window.removeEventListener("online", handleOnline);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [activeVehicle?.id]);
 
   // --- Chuyển xe ---
   async function handleSwitchVehicle(vehicleId) {
@@ -202,13 +221,69 @@ export default function HomePage() {
     saveCache({ vehicle: activeVehicle, parts: p });
   }, [activeVehicle]);
 
+  const refreshSyncCount = useCallback(() => {
+  setSyncPendingCount(getQueue().length);
+}, []);
+
+// Map từ tên hành động trong hàng đợi -> hàm gọi Supabase thật
+const queueHandlers = useMemo(
+  () => ({
+    MARK_SERVICE_DONE: (payload) => addMaintenanceLog(payload),
+    UPDATE_ODO: (payload) => updateVehicleOdo(payload.vehicleId, payload.newOdo),
+    ADD_FUEL_LOG: (payload) => {
+      const { vehicleId, ...rest } = payload;
+      return addFuelLog({ vehicleId, ...rest });
+    },
+  }),
+  []
+);
+
+const runSync = useCallback(async () => {
+  if (syncing) return;
+  if (typeof navigator !== "undefined" && !navigator.onLine) return;
+  if (getQueue().length === 0) return;
+
+  setSyncing(true);
+  try {
+    await processQueue(queueHandlers);
+    refreshSyncCount();
+
+    // Đồng bộ xong -> tải lại dữ liệu THẬT từ server để thay thế các giá trị
+    // đã cập nhật lạc quan (optimistic) trên máy trong lúc mất mạng.
+    if (activeVehicle) {
+      const [freshVehicles, freshParts, freshFuel] = await Promise.all([
+        fetchVehicles(),
+        fetchParts(activeVehicle.id),
+        fetchFuelLogs(activeVehicle.id),
+      ]);
+      const freshVehicle = freshVehicles.find((v) => v.id === activeVehicle.id) || activeVehicle;
+      setVehicles(freshVehicles);
+      setActiveVehicle(freshVehicle);
+      setParts(freshParts);
+      setFuelLogs(freshFuel);
+      saveCache({ vehicle: freshVehicle, parts: freshParts });
+    }
+  } finally {
+    setSyncing(false);
+  }
+}, [syncing, activeVehicle, queueHandlers, refreshSyncCount]);
+
   async function handleUpdateOdo(newOdo) {
+  try {
     const updated = await updateVehicleOdo(activeVehicle.id, newOdo);
     setActiveVehicle(updated);
     saveCache({ vehicle: updated, parts });
-    setOdoModalOpen(false);
-    vibrate([10, 20]);
+  } catch (err) {
+    if (!isLikelyNetworkError(err)) throw err;
+    enqueue("UPDATE_ODO", { vehicleId: activeVehicle.id, newOdo });
+    const optimistic = { ...activeVehicle, current_odo: newOdo, odo_updated_at: new Date().toISOString() };
+    setActiveVehicle(optimistic);
+    saveCache({ vehicle: optimistic, parts });
+    refreshSyncCount();
   }
+  setOdoModalOpen(false);
+  vibrate([10, 20]);
+}
 
   async function handleUpdateAvgKm(avg) {
     const updated = await updateAvgKmPerDay(activeVehicle.id, avg);
@@ -243,26 +318,56 @@ export default function HomePage() {
   }
 
   async function handleSaveService({ partId, date, odo, cost, note }) {
-    await addMaintenanceLog({ partId, vehicleId: activeVehicle.id, date, odo, cost, note });
-    const refreshed = await fetchParts(activeVehicle.id);
-    setParts(refreshed);
-    saveCache({ vehicle: activeVehicle, parts: refreshed });
+    const payload = { partId, vehicleId: activeVehicle.id, date, odo, cost, note };
+    try {
+      await addMaintenanceLog(payload);
+      const refreshed = await fetchParts(activeVehicle.id);
+      setParts(refreshed);
+      saveCache({ vehicle: activeVehicle, parts: refreshed });
+    } catch (err) {
+      if (!isLikelyNetworkError(err)) throw err; // lỗi thật -> ném lại như cũ, không xếp hàng
+      // Mất mạng -> xếp hàng đồng bộ sau + cập nhật lạc quan để UI vẫn đúng ngay
+      enqueue("MARK_SERVICE_DONE", payload);
+      setParts((prev) =>
+        prev.map((p) => (p.id === partId ? { ...p, last_service_odo: odo, last_service_date: date } : p))
+      );
+      refreshSyncCount();
+    }
     setServiceModalPart(null);
     vibrate([10, 30, 10]);
   }
 
   async function handleSaveFuelLog(values) {
-  if (editingFuelLog) {
-    const updated = await updateFuelLog(editingFuelLog.id, values);
-    setFuelLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)).sort((a, b) => a.odo_at_fill - b.odo_at_fill));
-  } else {
-    const created = await addFuelLog({ vehicleId: activeVehicle.id, ...values });
-    setFuelLogs((prev) => [...prev, created].sort((a, b) => a.odo_at_fill - b.odo_at_fill));
+    if (editingFuelLog) {
+      const updated = await updateFuelLog(editingFuelLog.id, values);
+      setFuelLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)).sort((a, b) => a.odo_at_fill - b.odo_at_fill));
+    } else {
+      const payload = { vehicleId: activeVehicle.id, ...values };
+      try {
+        const created = await addFuelLog(payload);
+        setFuelLogs((prev) => [...prev, created].sort((a, b) => a.odo_at_fill - b.odo_at_fill));
+      } catch (err) {
+        if (!isLikelyNetworkError(err)) throw err;
+        enqueue("ADD_FUEL_LOG", payload);
+        const tempLog = {
+          id: `pending-${Date.now()}`,
+          vehicle_id: activeVehicle.id,
+          fill_date: values.fillDate,
+          odo_at_fill: values.odoAtFill,
+          liters: values.liters,
+          total_cost: values.totalCost,
+          station: values.station,
+          notes: values.notes,
+          pending: true, // đánh dấu để FuelSection hiện badge "Đang chờ đồng bộ"
+        };
+        setFuelLogs((prev) => [...prev, tempLog].sort((a, b) => a.odo_at_fill - b.odo_at_fill));
+        refreshSyncCount();
+      }
+    }
+    setFuelFormMode(null);
+    setEditingFuelLog(null);
+    vibrate([10, 30, 10]);
   }
-  setFuelFormMode(null);
-  setEditingFuelLog(null);
-  vibrate([10, 30, 10]);
-}
 
 async function handleDeleteFuelLog(logId) {
   await deleteFuelLog(logId);
@@ -391,6 +496,24 @@ async function handleMovePart(partId, direction) {
                 </button>
               </div>
             </div>
+
+            {syncPendingCount > 0 && (
+              <button
+                onClick={() => { vibrate(10); runSync(); }}
+                disabled={syncing}
+                className="w-8 h-8 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center relative"
+                title={`${syncPendingCount} thao tác đang chờ đồng bộ`}
+              >
+                {syncing ? (
+                  <RefreshCw className="w-4 h-4 text-amber-500 animate-spin" />
+                ) : (
+                  <CloudOff className="w-4 h-4 text-amber-500" />
+                )}
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-[9px] font-bold text-white flex items-center justify-center">
+                  {syncPendingCount}
+                </span>
+              </button>
+            )}
 
             <button
               onClick={() => { vibrate(10); setOdoModalOpen(true); }}

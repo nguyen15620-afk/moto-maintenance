@@ -130,7 +130,14 @@ export default function FuelSection({ fuelLogs, onAdd, onEdit, onDelete }) {
             <div key={log.id} className="rounded-2xl bg-[var(--surface)] border border-[var(--border)] px-3.5 py-2.5">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-sm font-medium">{formatDateVN(log.fill_date)}</div>
+                  <div className="text-sm font-medium flex items-center gap-1.5">
+                    {formatDateVN(log.fill_date)}
+                    {log.pending && (
+                      <span className="text-[9px] uppercase tracking-wide bg-amber-500/15 text-amber-500 px-1.5 py-0.5 rounded-full">
+                        Chờ đồng bộ
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-[var(--text-muted)] mt-0.5">
                     {formatKm(log.odo_at_fill)} km · {log.liters} lít
                     {point && <> · <span className="text-[var(--accent)] font-medium">{point.consumption.toFixed(2)} L/100km</span></>}
