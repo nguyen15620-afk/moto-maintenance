@@ -10,7 +10,8 @@ import { useAuth } from "@/lib/AuthContext";
 import {
   fetchVehicles, updateVehicleOdo, updateAvgKmPerDay, updateVehicleInfo, addVehicle,
   fetchParts, addMaintenanceLog,
-  addPart, updatePart, deactivatePart, // ← thêm
+  addPart, updatePart, deactivatePart,
+  fetchFuelLogs, addFuelLog, updateFuelLog, deleteFuelLog,
 } from "@/lib/api";
 import { saveCache, loadCache } from "@/lib/offlineCache";
 import { vibrate } from "@/lib/haptics";
@@ -19,6 +20,8 @@ import VehicleFormModal from "@/components/VehicleFormModal";
 import PartHistoryModal from "@/components/PartHistoryModal";
 import PinLock from "@/components/PinLock";
 import PartFormModal from "@/components/PartFormModal";
+import FuelSection from "@/components/FuelSection";
+import FuelFormModal from "@/components/FuelFormModal";
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 const ACTIVE_VEHICLE_KEY = "motocare_active_vehicle";
@@ -90,6 +93,9 @@ export default function HomePage() {
 
   const [partFormMode, setPartFormMode] = useState(null); // null | "add" | "edit"
   const [editingPart, setEditingPart] = useState(null);
+  const [fuelLogs, setFuelLogs] = useState([]);
+  const [fuelFormMode, setFuelFormMode] = useState(null); // null | "add" | "edit"
+  const [editingFuelLog, setEditingFuelLog] = useState(null);
 
   // --- Auth gate: chưa đăng nhập -> chuyển sang /login ---
   useEffect(() => {
@@ -104,6 +110,7 @@ export default function HomePage() {
       const savedId = localStorage.getItem(ACTIVE_VEHICLE_KEY);
       const current = vs.find((v) => v.id === savedId) || vs[0];
       const p = await fetchParts(current.id);
+      const f = await fetchFuelLogs(current.id);
 
       // Luôn đồng bộ lại localStorage với xe đang thực sự active — kể cả khi
       // rơi vào trường hợp fallback vs[0] (chưa từng bấm "Đổi xe") hoặc xe đã
@@ -113,6 +120,7 @@ export default function HomePage() {
       setVehicles(vs);
       setActiveVehicle(current);
       setParts(p);
+      setFuelLogs(f);
       setOffline(false);
       saveCache({ vehicle: current, parts: p }); // cache lại cho lần mất mạng sau
     } catch (err) {
@@ -142,7 +150,9 @@ export default function HomePage() {
     localStorage.setItem(ACTIVE_VEHICLE_KEY, vehicleId);
     const p = await fetchParts(vehicleId);
     setParts(p);
-    saveCache({ vehicle: v, parts: p });
+    const f = await fetchFuelLogs(vehicleId);
+    setFuelLogs(f);
+    saveCache({ vehicle: v, parts: p, fuelLogs: f });
   }
 
   // ODO ước tính hôm nay — dùng để tính trạng thái/% hao mòn, "tự nhích" mỗi ngày
@@ -231,6 +241,25 @@ export default function HomePage() {
     setServiceModalPart(null);
     vibrate([10, 30, 10]);
   }
+
+  async function handleSaveFuelLog(values) {
+  if (editingFuelLog) {
+    const updated = await updateFuelLog(editingFuelLog.id, values);
+    setFuelLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)).sort((a, b) => a.odo_at_fill - b.odo_at_fill));
+  } else {
+    const created = await addFuelLog({ vehicleId: activeVehicle.id, ...values });
+    setFuelLogs((prev) => [...prev, created].sort((a, b) => a.odo_at_fill - b.odo_at_fill));
+  }
+  setFuelFormMode(null);
+  setEditingFuelLog(null);
+  vibrate([10, 30, 10]);
+}
+
+async function handleDeleteFuelLog(logId) {
+  await deleteFuelLog(logId);
+  setFuelLogs((prev) => prev.filter((l) => l.id !== logId));
+  vibrate(200);
+}
 
   async function handleSavePart(values) {
   if (editingPart) {
@@ -386,6 +415,13 @@ async function handleDeletePart(partId) {
               </div>
             </div>
 
+            <FuelSection
+              fuelLogs={fuelLogs}
+              onAdd={() => { setEditingFuelLog(null); setFuelFormMode("add"); }}
+              onEdit={(log) => { setEditingFuelLog(log); setFuelFormMode("edit"); }}
+              onDelete={handleDeleteFuelLog}
+            />
+
             <div className="space-y-2.5">
               {filteredParts.length === 0 && (
                 <p className="text-sm text-[var(--text-muted)] text-center py-10">Không có phụ tùng nào ở trạng thái này 🎉</p>
@@ -453,6 +489,26 @@ async function handleDeletePart(partId) {
             }
             onClose={() => { setPartFormMode(null); setEditingPart(null); }}
             onSave={handleSavePart}
+          />                
+        )}
+
+        {fuelFormMode && (
+          <FuelFormModal
+            initialValues={
+              editingFuelLog
+                ? {
+                    fillDate: editingFuelLog.fill_date,
+                    odoAtFill: editingFuelLog.odo_at_fill,
+                    liters: editingFuelLog.liters,
+                    totalCost: editingFuelLog.total_cost,
+                    station: editingFuelLog.station,
+                    notes: editingFuelLog.notes,
+                  }
+                : {}
+            }
+            minOdo={fuelLogs.length ? fuelLogs[fuelLogs.length - 1].odo_at_fill : 0}
+            onClose={() => { setFuelFormMode(null); setEditingFuelLog(null); }}
+            onSave={handleSaveFuelLog}
           />
         )}
       </div>
