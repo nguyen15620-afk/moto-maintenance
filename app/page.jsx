@@ -7,16 +7,17 @@ import {
   Wrench, Calendar, Coins, StickyNote, Loader2, BarChart3, LogOut, WifiOff, Gauge as SpeedIcon, History, Trash2,
   ArrowUp, ArrowDown, ListOrdered, SlidersHorizontal,
   CloudOff, RefreshCw,
+  LayoutDashboard,
 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import {
-  fetchVehicles, updateVehicleOdo, updateAvgKmPerDay, updateVehicleInfo, addVehicle,
+  fetchVehicles, updateVehicleOdo, updateAvgKmPerDay, updateVehicleInfo, addVehicle, deleteVehicle,
   fetchParts, addMaintenanceLog,
   addPart, updatePart, deactivatePart,
   fetchFuelLogs, addFuelLog, updateFuelLog, deleteFuelLog,
   swapPartOrder, addDefaultParts,
 } from "@/lib/api";
-import { saveCache, loadCache } from "@/lib/offlineCache";
+import { saveCache, loadCache, clearCache } from "@/lib/offlineCache";
 import { vibrate } from "@/lib/haptics";
 import VehicleSwitcher from "@/components/VehicleSwitcher";
 import VehicleFormModal from "@/components/VehicleFormModal";
@@ -26,53 +27,10 @@ import PartFormModal from "@/components/PartFormModal";
 import FuelSection from "@/components/FuelSection";
 import FuelFormModal from "@/components/FuelFormModal";
 import { getQueue, enqueue, processQueue, isLikelyNetworkError } from "@/lib/syncQueue";
+import { getEstimatedOdo, computePartStatus, STATUS_CONFIG } from "@/lib/partStatus";
+import DeleteVehicleModal from "@/components/DeleteVehicleModal";
 
-const DAY_MS = 1000 * 60 * 60 * 24;
 const ACTIVE_VEHICLE_KEY = "motocare_active_vehicle";
-
-/**
- * Tính ODO ƯỚC TÍNH tại thời điểm hiện tại — KHÔNG ghi vào DB, chỉ dùng để
- * hiển thị và tính trạng thái phụ tùng "tự nhích" theo từng ngày.
- * ODO thật (vehicle.current_odo) vẫn giữ nguyên cho tới khi người dùng tự
- * bấm "Cập nhật" — tránh bị lệch số nếu có ngày không đi xe.
- */
-function getEstimatedOdo(vehicle) {
-  if (!vehicle) return { estimatedOdo: 0, daysSinceUpdate: 0 };
-  const daysSinceUpdate = Math.floor(
-    (Date.now() - new Date(vehicle.odo_updated_at).getTime()) / DAY_MS
-  );
-  const safeDays = Math.max(daysSinceUpdate, 0); // phòng trường hợp lệch giờ/timezone ra số âm
-  const avg = vehicle.avg_km_per_day || 0;
-  return {
-    estimatedOdo: vehicle.current_odo + avg * safeDays,
-    daysSinceUpdate: safeDays,
-  };
-}
-
-function computePartStatus(part, currentOdo) {
-  const today = new Date();
-  const kmSince = currentOdo - part.last_service_odo;
-  const daysSince = Math.floor((today.getTime() - new Date(part.last_service_date).getTime()) / DAY_MS);
-  const kmRatio = part.interval_km ? kmSince / part.interval_km : null;
-  const monthsRatio = part.interval_months ? daysSince / (part.interval_months * 30) : null;
-  const ratios = [kmRatio, monthsRatio].filter((r) => r !== null);
-  const usedRatio = Math.max(...ratios);
-
-  const remainingKm = part.interval_km ? part.interval_km - kmSince : null;
-  const remainingDaysByTime = part.interval_months ? part.interval_months * 30 - daysSince : null;
-
-  let status = "green";
-  if (usedRatio >= 1) status = "red";
-  else if (usedRatio >= 0.8) status = "yellow";
-
-  return { usedRatio: Math.min(usedRatio, 1.3), status, remainingKm, remainingDaysByTime };
-}
-
-const STATUS_CONFIG = {
-  red: { label: "Quá hạn", text: "text-[var(--danger-text)]", bg: "bg-[var(--danger-bg)]", chip: "bg-[var(--danger-bg)]/10 text-[var(--danger-text)] border-[var(--danger-bg)]/30" },
-  yellow: { label: "Sắp đến hạn", text: "text-[var(--warn-text)]", bg: "bg-[var(--warn-bg)]", chip: "bg-[var(--warn-bg)]/10 text-[var(--warn-text)] border-[var(--warn-bg)]/30" },
-  green: { label: "An toàn", text: "text-[var(--good-text)]", bg: "bg-[var(--good-bg)]", chip: "bg-[var(--good-bg)]/10 text-[var(--good-text)] border-[var(--good-bg)]/30" },
-};
 
 const formatDateVN = (d) => new Date(d).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 const formatKm = (n) => n.toLocaleString("vi-VN");
@@ -92,6 +50,7 @@ export default function HomePage() {
   const [serviceModalPart, setServiceModalPart] = useState(null);
   const [vehicleFormMode, setVehicleFormMode] = useState(null); // null | "add" | "edit"
   const [editingVehicle, setEditingVehicle] = useState(null);
+  const [deletingVehicle, setDeletingVehicle] = useState(null); // xe đang chờ xác nhận xoá
   const [historyModalPart, setHistoryModalPart] = useState(null); // part đang xem lịch sử
   const [filter, setFilter] = useState("all");
   const [sortMode, setSortMode] = useState("status"); // "status" | "custom"
@@ -330,6 +289,30 @@ const runSync = useCallback(async () => {
     setEditingVehicle(null);
   }
 
+  // --- Xoá xe (kèm toàn bộ parts/logs/fuel_logs liên quan qua cascade) ---
+async function handleDeleteVehicle() {
+  await deleteVehicle(deletingVehicle.id);
+  const remaining = vehicles.filter((v) => v.id !== deletingVehicle.id);
+  setVehicles(remaining);
+
+  if (activeVehicle?.id === deletingVehicle.id) {
+    const next = remaining[0] || null;
+    setActiveVehicle(next);
+    if (next) {
+      localStorage.setItem(ACTIVE_VEHICLE_KEY, next.id);
+      const p = await fetchParts(next.id);
+      setParts(p);
+      saveCache({ vehicle: next, parts: p });
+    } else {
+      // Không còn xe nào -> quay về màn hình "Thêm xe đầu tiên"
+      localStorage.removeItem(ACTIVE_VEHICLE_KEY);
+      setParts([]);
+      clearCache();
+    }
+  }
+  setDeletingVehicle(null);
+}
+
   async function handleSaveService({ partId, date, odo, cost, note }) {
     const payload = { partId, vehicleId: activeVehicle.id, date, odo, cost, note };
     try {
@@ -494,7 +477,15 @@ async function handleMovePart(partId, direction) {
                     setEditingVehicle(v);
                     setVehicleFormMode("edit");
                   }}
+                  onRequestDelete={(v) => setDeletingVehicle(v)}
                 />
+                <button
+                  onClick={() => router.push("/overview")}
+                  className="w-8 h-8 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center"
+                  title="Tổng quan các xe"
+                >
+                  <LayoutDashboard className="w-4 h-4 text-[var(--text-muted)]" />
+                </button>
                 <button
                   onClick={() => router.push("/stats")}
                   className="w-8 h-8 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center"
@@ -640,6 +631,14 @@ async function handleMovePart(partId, direction) {
             )}
             onClose={() => setOdoModalOpen(false)}
             onSave={handleUpdateOdo}
+          />
+        )}
+
+        {deletingVehicle && (
+          <DeleteVehicleModal
+            vehicle={deletingVehicle}
+            onClose={() => setDeletingVehicle(null)}
+            onConfirm={handleDeleteVehicle}
           />
         )}
 

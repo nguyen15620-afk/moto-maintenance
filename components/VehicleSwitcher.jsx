@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import { ChevronDown, Check, Bike, Plus, Pencil } from "lucide-react";
+import { ChevronDown, Check, Bike, Plus, Pencil, Trash2 } from "lucide-react";
 import { vibrate } from "@/lib/haptics";
 
 /**
- * VehicleSwitcher — dropdown chuyển xe + thêm xe mới + sửa xe đang chọn.
- * LUÔN hiển thị (kể cả khi chỉ có 1 xe) vì giờ đây còn dùng để "Thêm xe" / "Sửa xe".
+ * VehicleSwitcher — dropdown chuyển xe + thêm xe mới + sửa/xoá xe.
+ * LUÔN hiển thị (kể cả khi chỉ có 1 xe) vì giờ đây còn dùng để
+ * "Thêm xe" / "Sửa xe" / "Xoá xe".
  *
  * Props:
  *  - vehicles: mảng xe của user (từ fetchVehicles())
@@ -14,8 +15,16 @@ import { vibrate } from "@/lib/haptics";
  *  - onSwitch(vehicleId)
  *  - onAddVehicle()   -> mở modal thêm xe (xử lý ở page.jsx)
  *  - onEditVehicle(vehicle) -> mở modal sửa xe được chọn
+ *  - onRequestDelete(vehicle) -> mở modal xác nhận xoá xe (xử lý ở page.jsx)
  */
-export default function VehicleSwitcher({ vehicles, activeVehicle, onSwitch, onAddVehicle, onEditVehicle }) {
+export default function VehicleSwitcher({
+  vehicles,
+  activeVehicle,
+  onSwitch,
+  onAddVehicle,
+  onEditVehicle,
+  onRequestDelete,
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -33,7 +42,7 @@ export default function VehicleSwitcher({ vehicles, activeVehicle, onSwitch, onA
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-2 w-64 bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-xl z-40 overflow-hidden">
+          <div className="absolute right-0 mt-2 w-72 bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-xl z-40 overflow-hidden">
             {vehicles.map((v) => (
               <div key={v.id} className="flex items-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                 <button
@@ -59,10 +68,21 @@ export default function VehicleSwitcher({ vehicles, activeVehicle, onSwitch, onA
                     onEditVehicle(v);
                     setOpen(false);
                   }}
-                  className="w-9 h-9 flex items-center justify-center shrink-0 mr-1.5"
+                  className="w-9 h-9 flex items-center justify-center shrink-0"
                   title="Sửa thông tin xe"
                 >
                   <Pencil className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                </button>
+                <button
+                  onClick={() => {
+                    vibrate(10);
+                    onRequestDelete(v);
+                    setOpen(false);
+                  }}
+                  className="w-9 h-9 flex items-center justify-center shrink-0 mr-1.5"
+                  title="Xoá xe"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-[var(--danger-text)]" />
                 </button>
               </div>
             ))}

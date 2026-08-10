@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { Fuel, Plus, Pencil, Trash2, AlertTriangle, TrendingUp } from "lucide-react";
 import { vibrate } from "@/lib/haptics";
+import { buildConsumptionPoints } from "@/lib/fuelStats";
 
 const formatDateVN = (d) => new Date(d).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 const formatKm = (n) => n.toLocaleString("vi-VN");
@@ -20,20 +21,6 @@ const ANOMALY_CHECKLIST = [
   "Cảm biến oxy (với xe phun xăng điện tử) — báo sai làm ECU bơm dư xăng",
   "Thói quen lái gần đây — chở nặng hơn, đi phố kẹt xe nhiều, tăng giảm ga gấp",
 ];
-
-/** Tính L/100km giữa các lần đổ liên tiếp (bỏ qua cặp có ODO không tăng — dữ liệu nhập sai) */
-function buildConsumptionPoints(logs) {
-  const points = [];
-  for (let i = 1; i < logs.length; i++) {
-    const prev = logs[i - 1];
-    const cur = logs[i];
-    const distance = cur.odo_at_fill - prev.odo_at_fill;
-    if (distance <= 0) continue;
-    const consumption = (cur.liters / distance) * 100;
-    points.push({ id: cur.id, date: cur.fill_date, distance, liters: cur.liters, consumption });
-  }
-  return points;
-}
 
 /** So lần đổ mới nhất với trung bình tối đa 5 lần trước đó */
 function detectAnomaly(points) {
