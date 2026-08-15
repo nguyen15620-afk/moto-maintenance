@@ -67,6 +67,7 @@ export default function PinLock({ children }) {
                 setInput((s) => s.slice(0, -1));
               }}
               className="h-14 rounded-full flex items-center justify-center text-[var(--text-muted)]"
+              aria-label="Xoá số vừa nhập"
             >
               <Delete className="w-5 h-5" />
             </button>

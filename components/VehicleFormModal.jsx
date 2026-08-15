@@ -59,7 +59,7 @@ export default function VehicleFormModal({ mode = "add", initialValues = {}, onC
             <Bike className="w-4 h-4 text-[var(--accent)]" />
             {mode === "add" ? "Thêm xe mới" : "Sửa thông tin xe"}
           </h3>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center">
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" aria-label="Đóng">
             <X className="w-4 h-4 text-[var(--text-muted)]" />
           </button>
         </div>

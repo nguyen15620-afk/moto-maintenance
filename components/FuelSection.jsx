@@ -51,7 +51,7 @@ export default function FuelSection({ fuelLogs, onAdd, onEdit, onDelete }) {
   }, [points]);
 
   return (
-    <section className="mt-5">
+    <section>
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-[var(--text-muted)] flex items-center gap-1.5">
           <Fuel className="w-4 h-4" /> Mức tiêu thụ xăng
@@ -132,7 +132,7 @@ export default function FuelSection({ fuelLogs, onAdd, onEdit, onDelete }) {
                   {log.station && <div className="text-xs text-[var(--text-muted)] mt-0.5">{log.station}</div>}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => { vibrate(10); onEdit(log); }} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center">
+                  <button onClick={() => { vibrate(10); onEdit(log); }} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" aria-label="Sửa lần đổ xăng">
                     <Pencil className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                   </button>
                   {confirmDeleteId === log.id ? (
@@ -146,6 +146,7 @@ export default function FuelSection({ fuelLogs, onAdd, onEdit, onDelete }) {
                     <button
                       onClick={() => { vibrate(10); setConfirmDeleteId(log.id); setTimeout(() => setConfirmDeleteId((id) => (id === log.id ? null : id)), 3000); }}
                       className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center"
+                      aria-label="Xoá lần đổ xăng"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-[var(--danger-text)]" />
                     </button>

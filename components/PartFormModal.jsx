@@ -61,7 +61,7 @@ export default function PartFormModal({ mode = "add", initialValues = {}, onClos
             <Wrench className="w-4 h-4 text-[var(--accent)]" />
             {mode === "add" ? "Thêm phụ tùng" : "Sửa phụ tùng"}
           </h3>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center">
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" aria-label="Đóng">
             <X className="w-4 h-4 text-[var(--text-muted)]" />
           </button>
         </div>

@@ -61,7 +61,7 @@ export default function CostReportPage() {
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] pb-10">
       <header className="sticky top-0 z-20 bg-[var(--bg)]/95 backdrop-blur border-b border-[var(--border)] px-4 pt-[env(safe-area-inset-top)]">
         <div className="max-w-md mx-auto py-4 flex items-center gap-3">
-          <button onClick={() => router.back()} className="w-8 h-8 rounded-full bg-[var(--surface)] flex items-center justify-center">
+          <button onClick={() => router.back()} className="w-8 h-8 rounded-full bg-[var(--surface)] flex items-center justify-center" aria-label="Quay lại">
             <ArrowLeft className="w-4 h-4" />
           </button>
           <h1 className="text-[15px] font-semibold">Thống kê chi phí</h1>

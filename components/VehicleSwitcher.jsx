@@ -35,6 +35,8 @@ export default function VehicleSwitcher({
           setOpen((o) => !o);
         }}
         className="flex items-center gap-1 text-xs text-[var(--text-muted)] bg-[var(--surface)] border border-[var(--border)] rounded-full px-2.5 py-1"
+        aria-expanded={open}
+        aria-haspopup="menu"
       >
         Đổi xe <ChevronDown className="w-3 h-3" />
       </button>
@@ -70,6 +72,7 @@ export default function VehicleSwitcher({
                   }}
                   className="w-9 h-9 flex items-center justify-center shrink-0"
                   title="Sửa thông tin xe"
+                  aria-label={`Sửa thông tin xe ${v.name}`}
                 >
                   <Pencil className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                 </button>
@@ -81,6 +84,7 @@ export default function VehicleSwitcher({
                   }}
                   className="w-9 h-9 flex items-center justify-center shrink-0 mr-1.5"
                   title="Xoá xe"
+                  aria-label={`Xoá xe ${v.name}`}
                 >
                   <Trash2 className="w-3.5 h-3.5 text-[var(--danger-text)]" />
                 </button>

@@ -55,7 +55,7 @@ export default function PartHistoryModal({ part, onClose, onChanged }) {
         <div className="w-9 h-1 bg-black/10 dark:bg-white/15 rounded-full mx-auto mb-3 shrink-0" />
         <div className="flex items-center justify-between mb-4 shrink-0">
           <h3 className="text-base font-semibold">Lịch sử: {part.name}</h3>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center">
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" aria-label="Đóng">
             <X className="w-4 h-4 text-[var(--text-muted)]" />
           </button>
         </div>
@@ -97,6 +97,7 @@ export default function PartHistoryModal({ part, onClose, onChanged }) {
                       <button
                         onClick={() => { vibrate(10); setEditingId(log.id); }}
                         className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center"
+                        aria-label="Sửa bản ghi"
                       >
                         <Pencil className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                       </button>
@@ -112,6 +113,7 @@ export default function PartHistoryModal({ part, onClose, onChanged }) {
                         <button
                           onClick={() => { vibrate(10); setConfirmDeleteId(log.id); setTimeout(() => setConfirmDeleteId((id) => (id === log.id ? null : id)), 3000); }}
                           className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center"
+                          aria-label="Xoá bản ghi"
                         >
                           <Trash2 className="w-3.5 h-3.5 text-[var(--danger-text)]" />
                         </button>

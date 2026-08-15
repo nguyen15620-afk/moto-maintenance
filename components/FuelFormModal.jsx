@@ -84,7 +84,7 @@ export default function FuelFormModal({ initialValues = {}, minOdo = 0, onClose,
             <Fuel className="w-4 h-4 text-[var(--accent)]" />
             {initialValues.fillDate ? "Sửa lần đổ xăng" : "Ghi lần đổ xăng"}
           </h3>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center">
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" aria-label="Đóng">
             <X className="w-4 h-4 text-[var(--text-muted)]" />
           </button>
         </div>

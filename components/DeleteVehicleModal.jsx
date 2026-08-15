@@ -45,6 +45,7 @@ export default function DeleteVehicleModal({ vehicle, onClose, onConfirm }) {
             onClick={onClose}
             disabled={deleting}
             className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center disabled:opacity-40"
+            aria-label="Đóng"
           >
             <X className="w-4 h-4 text-[var(--text-muted)]" />
           </button>
