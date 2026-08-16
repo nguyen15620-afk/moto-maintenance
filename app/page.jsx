@@ -28,6 +28,7 @@ import FuelSection from "@/components/FuelSection";
 import FuelFormModal from "@/components/FuelFormModal";
 import { getQueue, enqueue, processQueue, isLikelyNetworkError } from "@/lib/syncQueue";
 import { getEstimatedOdo, computePartStatus, STATUS_CONFIG } from "@/lib/partStatus";
+import { predictNextRefill } from "@/lib/fuelStats";
 import DeleteVehicleModal from "@/components/DeleteVehicleModal";
 
 const ACTIVE_VEHICLE_KEY = "motocare_active_vehicle";
@@ -131,6 +132,12 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeVehicle?.current_odo, activeVehicle?.odo_updated_at, activeVehicle?.avg_km_per_day]
   );
+
+  const fuelPrediction = useMemo(() => predictNextRefill(fuelLogs), [fuelLogs]);
+  const fuelNeedsAttention = useMemo(() => {
+    if (!fuelPrediction) return false;
+    return Math.round(estimatedOdo) >= fuelPrediction.suggestedOdo;
+  }, [fuelPrediction, estimatedOdo]);
 
   const partsWithStatus = useMemo(() => {
     if (!activeVehicle) return [];
@@ -593,6 +600,12 @@ async function handleMovePart(partId, direction) {
                 }`}
               >
                 <Fuel className="w-3.5 h-3.5" /> Xăng
+                {fuelNeedsAttention && (
+                  <span
+                    className={`w-2 h-2 rounded-full ${activeTab === "fuel" ? "bg-black/40" : "bg-[var(--danger-bg)]"}`}
+                    aria-label="Sắp tới lúc nên đổ xăng"
+                  />
+                )}
               </button>
             </div>
           </div>
@@ -662,6 +675,7 @@ async function handleMovePart(partId, direction) {
             <section className="mt-5">
               <FuelSection
                 fuelLogs={fuelLogs}
+                currentOdo={Math.round(estimatedOdo)}
                 onAdd={() => { setEditingFuelLog(null); setFuelFormMode("add"); }}
                 onEdit={(log) => { setEditingFuelLog(log); setFuelFormMode("edit"); }}
                 onDelete={handleDeleteFuelLog}
