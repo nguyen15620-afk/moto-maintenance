@@ -754,7 +754,13 @@ async function handleMovePart(partId, direction) {
                   }
                 : {}
             }
-            minOdo={fuelLogs.length ? fuelLogs[fuelLogs.length - 1].odo_at_fill : 0}
+            minOdo={(() => {
+              if (editingFuelLog) {
+                const idx = fuelLogs.findIndex((l) => l.id === editingFuelLog.id);
+                return idx > 0 ? fuelLogs[idx - 1].odo_at_fill : 0;
+              }
+              return fuelLogs.length ? fuelLogs[fuelLogs.length - 1].odo_at_fill : 0;
+            })()}
             onClose={() => { setFuelFormMode(null); setEditingFuelLog(null); }}
             onSave={handleSaveFuelLog}
           />
