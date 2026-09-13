@@ -160,18 +160,23 @@ export default function FuelSection({ fuelLogs, currentOdo, onAdd, onEdit, onDel
             <span className="text-[10px] text-[var(--text-muted)]">{trendPoints.length} lần đổ gần nhất</span>
           </div>
 
-          <div className="flex items-end gap-1.5 h-24">
-            {trendPoints.map((p) => (
-              <div key={p.id} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+          <div className="relative" style={{ height: 96 }}>
+            <div className="absolute inset-0 flex items-end gap-1.5">
+              {trendPoints.map((p) => (
                 <div
-                  className={`w-full rounded-t-md transition-all ${trendBarColor(p.consumption, trendAvg)}`}
+                  key={p.id}
+                  className={`flex-1 rounded-t-md transition-all ${trendBarColor(p.consumption, trendAvg)}`}
                   style={{ height: `${Math.max((p.consumption / trendMax) * 100, 6)}%` }}
                   title={`${formatShortDate(p.date)}: ${p.consumption.toFixed(2)} L/100km`}
                 />
-                <span className="text-[8px] text-[var(--text-muted)] truncate w-full text-center">
-                  {formatShortDate(p.date)}
-                </span>
-              </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-1.5 mt-1">
+            {trendPoints.map((p) => (
+              <span key={p.id} className="flex-1 text-[8px] text-[var(--text-muted)] truncate text-center">
+                {formatShortDate(p.date)}
+              </span>
             ))}
           </div>
 
