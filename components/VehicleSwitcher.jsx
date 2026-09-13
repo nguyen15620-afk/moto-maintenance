@@ -44,7 +44,10 @@ export default function VehicleSwitcher({
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-2 w-72 bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-xl z-40 overflow-hidden">
+          <div
+            className="absolute right-0 mt-2 w-72 bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-xl z-40 overflow-hidden"
+            style={{ animation: 'dropdownIn 0.2s ease-out' }}
+          >
             {vehicles.map((v) => (
               <div key={v.id} className="flex items-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                 <button
@@ -103,6 +106,7 @@ export default function VehicleSwitcher({
               <span className="text-sm font-medium">Thêm xe mới</span>
             </button>
           </div>
+          <style>{`@keyframes dropdownIn { from { opacity: 0; transform: translateY(-8px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }`}</style>
         </>
       )}
     </div>

@@ -66,16 +66,21 @@ export default function OverviewPage() {
     async function load() {
       const vehicles = await fetchVehicles();
 
-      const results = await Promise.all(
+      const results = (await Promise.all(
         vehicles.map(async (v) => {
-          const [parts, fuelLogs, monthlyCost] = await Promise.all([
-            fetchParts(v.id),
-            fetchFuelLogs(v.id),
-            fetchMonthlyCost(v.id),
-          ]);
-          return { vehicle: v, summary: buildVehicleSummary(v, parts, fuelLogs, monthlyCost) };
+          try {
+            const [parts, fuelLogs, monthlyCost] = await Promise.all([
+              fetchParts(v.id),
+              fetchFuelLogs(v.id),
+              fetchMonthlyCost(v.id),
+            ]);
+            return { vehicle: v, summary: buildVehicleSummary(v, parts, fuelLogs, monthlyCost) };
+          } catch (err) {
+            console.error(`Lỗi tải dữ liệu xe ${v.name}:`, err);
+            return null; // bỏ qua xe lỗi, không crash cả trang
+          }
         })
-      );
+      )).filter(Boolean);
 
       setRows(results);
       setLoading(false);

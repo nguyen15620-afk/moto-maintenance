@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Coins, TrendingUp, Wrench } from "lucide-react";
-import { fetchVehicles, fetchMonthlyCost, fetchTopCostParts, fetchYearSummary } from "@/lib/api";
+import { ArrowLeft, Coins, TrendingUp, Wrench, Fuel, Download } from "lucide-react";
+import { fetchVehicles, fetchMonthlyCost, fetchTopCostParts, fetchYearSummary, fetchFuelLogs } from "@/lib/api";
 
 const formatVND = (n) => (n || 0).toLocaleString("vi-VN") + "đ";
 const monthLabel = (dateStr) => {
@@ -16,7 +16,7 @@ export default function CostReportPage() {
   const [loading, setLoading] = useState(true);
   const [monthly, setMonthly] = useState([]);
   const [topParts, setTopParts] = useState([]);
-  const [yearSummary, setYearSummary] = useState({ totalCost: 0, serviceCount: 0 });
+  const [yearSummary, setYearSummary] = useState({ totalCost: 0, serviceCount: 0, fuelCost: 0 });
 
   useEffect(() => {
     async function load() {
@@ -30,14 +30,20 @@ export default function CostReportPage() {
       if (activeId) localStorage.setItem("motocare_active_vehicle", activeId); // tự sửa lại nếu sai
       if (!activeId) return setLoading(false);
 
-      const [m, t, y] = await Promise.all([
+      const [m, t, y, fuelLogs] = await Promise.all([
         fetchMonthlyCost(activeId),
         fetchTopCostParts(activeId),
         fetchYearSummary(activeId, new Date().getFullYear()),
+        fetchFuelLogs(activeId),
       ]);
+      // Tính chi phí xăng trong năm hiện tại
+      const currentYear = new Date().getFullYear();
+      const fuelCostThisYear = fuelLogs
+        .filter((f) => f.fill_date && new Date(f.fill_date).getFullYear() === currentYear)
+        .reduce((sum, f) => sum + (f.total_cost || 0), 0);
       setMonthly(m);
       setTopParts(t.filter((p) => p.total_cost > 0));
-      setYearSummary(y);
+      setYearSummary({ ...y, fuelCost: fuelCostThisYear });
       setLoading(false);
     }
 
@@ -48,14 +54,35 @@ export default function CostReportPage() {
     function handleFocus() {
       load();
     }
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", () => {
+    function handleVisibility() {
       if (document.visibilityState === "visible") load();
-    });
-    return () => window.removeEventListener("focus", handleFocus);
+    }
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, []);
 
   const maxMonthly = Math.max(...monthly.map((m) => m.total_cost), 1);
+
+  function handleExportCSV() {
+    if (!monthly.length) return;
+    const header = "Tháng,Chi phí bảo dưỡng (VNĐ),Số lần";
+    const rows = monthly.map((m) => {
+      const d = new Date(m.month);
+      return `Tháng ${d.getMonth() + 1}/${d.getFullYear()},${m.total_cost},${m.service_count}`;
+    });
+    const csv = "\uFEFF" + [header, ...rows].join("\n"); // BOM for Excel UTF-8
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `motocare_chiphi_${new Date().getFullYear()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] pb-10">
@@ -64,7 +91,17 @@ export default function CostReportPage() {
           <button onClick={() => router.back()} className="w-8 h-8 rounded-full bg-[var(--surface)] flex items-center justify-center" aria-label="Quay lại">
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <h1 className="text-[15px] font-semibold">Thống kê chi phí</h1>
+          <h1 className="text-[15px] font-semibold flex-1">Thống kê chi phí</h1>
+          {!loading && monthly.length > 0 && (
+            <button
+              onClick={handleExportCSV}
+              className="w-8 h-8 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center"
+              title="Xuất CSV"
+              aria-label="Xuất dữ liệu ra file CSV"
+            >
+              <Download className="w-4 h-4 text-[var(--text-muted)]" />
+            </button>
+          )}
         </div>
       </header>
 
@@ -77,13 +114,25 @@ export default function CostReportPage() {
             <div className="grid grid-cols-2 gap-2.5">
               <div className="rounded-2xl bg-[var(--surface)] border border-[var(--border)] p-3.5">
                 <Coins className="w-4 h-4 text-[var(--accent)] mb-1.5" />
-                <div className="text-lg font-bold font-mono tabular-nums">{formatVND(yearSummary.totalCost)}</div>
+                <div className="text-lg font-bold font-mono tabular-nums">{formatVND(yearSummary.totalCost + yearSummary.fuelCost)}</div>
                 <div className="text-[11px] text-[var(--text-muted)]">Tổng chi năm {new Date().getFullYear()}</div>
               </div>
               <div className="rounded-2xl bg-[var(--surface)] border border-[var(--border)] p-3.5">
                 <Wrench className="w-4 h-4 text-[var(--accent)] mb-1.5" />
                 <div className="text-lg font-bold font-mono tabular-nums">{yearSummary.serviceCount}</div>
                 <div className="text-[11px] text-[var(--text-muted)]">Lần bảo dưỡng năm nay</div>
+              </div>
+            </div>
+
+            {/* Phân tách chi phí bảo dưỡng vs xăng */}
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="rounded-xl bg-black/5 dark:bg-white/5 border border-[var(--border)] px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)] mb-0.5"><Wrench className="w-3 h-3" /> Bảo dưỡng</div>
+                <div className="text-sm font-mono tabular-nums font-medium">{formatVND(yearSummary.totalCost)}</div>
+              </div>
+              <div className="rounded-xl bg-black/5 dark:bg-white/5 border border-[var(--border)] px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)] mb-0.5"><Fuel className="w-3 h-3" /> Xăng</div>
+                <div className="text-sm font-mono tabular-nums font-medium">{formatVND(yearSummary.fuelCost)}</div>
               </div>
             </div>
 
@@ -99,12 +148,16 @@ export default function CostReportPage() {
                   <div className="relative" style={{ height: 120 }}>
                     <div className="absolute inset-0 flex items-end gap-2">
                       {monthly.slice(0, 6).reverse().map((m) => (
-                        <div
-                          key={m.month}
-                          className="flex-1 rounded-t-md bg-[var(--accent)]"
-                          style={{ height: `${Math.max((m.total_cost / maxMonthly) * 100, 4)}%` }}
-                          title={formatVND(m.total_cost)}
-                        />
+                        <div key={m.month} className="flex-1 flex flex-col items-center justify-end" style={{ height: '100%' }}>
+                          <span className="text-[8px] font-mono text-[var(--text-muted)] mb-1 truncate w-full text-center">
+                            {(m.total_cost / 1000).toFixed(0)}k
+                          </span>
+                          <div
+                            className="w-full rounded-t-md bg-[var(--accent)]"
+                            style={{ height: `${Math.max((m.total_cost / maxMonthly) * 100, 4)}%` }}
+                            title={formatVND(m.total_cost)}
+                          />
+                        </div>
                       ))}
                     </div>
                   </div>

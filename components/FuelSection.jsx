@@ -163,12 +163,16 @@ export default function FuelSection({ fuelLogs, currentOdo, onAdd, onEdit, onDel
           <div className="relative" style={{ height: 96 }}>
             <div className="absolute inset-0 flex items-end gap-1.5">
               {trendPoints.map((p) => (
-                <div
-                  key={p.id}
-                  className={`flex-1 rounded-t-md transition-all ${trendBarColor(p.consumption, trendAvg)}`}
-                  style={{ height: `${Math.max((p.consumption / trendMax) * 100, 6)}%` }}
-                  title={`${formatShortDate(p.date)}: ${p.consumption.toFixed(2)} L/100km`}
-                />
+                <div key={p.id} className="flex-1 flex flex-col items-center justify-end" style={{ height: '100%' }}>
+                  <span className="text-[7px] font-mono text-[var(--text-muted)] mb-0.5 truncate w-full text-center">
+                    {p.consumption.toFixed(1)}
+                  </span>
+                  <div
+                    className={`w-full rounded-t-md transition-all ${trendBarColor(p.consumption, trendAvg)}`}
+                    style={{ height: `${Math.max((p.consumption / trendMax) * 100, 6)}%` }}
+                    title={`${formatShortDate(p.date)}: ${p.consumption.toFixed(2)} L/100km`}
+                  />
+                </div>
               ))}
             </div>
           </div>
@@ -235,6 +239,7 @@ export default function FuelSection({ fuelLogs, currentOdo, onAdd, onEdit, onDel
                   <div className="text-xs text-[var(--text-muted)] mt-0.5">
                     {formatKm(log.odo_at_fill)} km · {log.liters} lít
                     {point && <> · <span className="text-[var(--accent)] font-medium">{point.consumption.toFixed(2)} L/100km</span></>}
+                    {log.total_cost && log.liters ? <> · {formatKm(Math.round(log.total_cost / log.liters))}đ/lít</> : null}
                   </div>
                   {log.station && <div className="text-xs text-[var(--text-muted)] mt-0.5">{log.station}</div>}
                 </div>
