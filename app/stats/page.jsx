@@ -95,19 +95,26 @@ export default function CostReportPage() {
               {monthly.length === 0 ? (
                 <p className="text-sm text-[var(--text-muted)]">Chưa có dữ liệu chi phí.</p>
               ) : (
-                <div className="flex items-end gap-2 h-36 rounded-2xl bg-[var(--surface)] border border-[var(--border)] p-3.5">
-                  {monthly.slice(0, 6).reverse().map((m) => (
-                    <div key={m.month} className="flex-1 flex flex-col items-center gap-1.5">
-                      <div
-                        className="w-full rounded-t-md bg-[var(--accent)]"
-                        style={{ height: `${Math.max((m.total_cost / maxMonthly) * 100, 4)}%` }}
-                        title={formatVND(m.total_cost)}
-                      />
-                      <span className="text-[9px] text-[var(--text-muted)]">
+                <div className="rounded-2xl bg-[var(--surface)] border border-[var(--border)] p-3.5">
+                  <div className="relative" style={{ height: 120 }}>
+                    <div className="absolute inset-0 flex items-end gap-2">
+                      {monthly.slice(0, 6).reverse().map((m) => (
+                        <div
+                          key={m.month}
+                          className="flex-1 rounded-t-md bg-[var(--accent)]"
+                          style={{ height: `${Math.max((m.total_cost / maxMonthly) * 100, 4)}%` }}
+                          title={formatVND(m.total_cost)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-1.5">
+                    {monthly.slice(0, 6).reverse().map((m) => (
+                      <span key={m.month} className="flex-1 text-[9px] text-[var(--text-muted)] text-center">
                         {new Date(m.month).getMonth() + 1}/{String(new Date(m.month).getFullYear()).slice(2)}
                       </span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </section>
