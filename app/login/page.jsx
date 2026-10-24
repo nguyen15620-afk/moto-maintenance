@@ -32,7 +32,7 @@ export default function LoginPage() {
       await signInWithOtp(email);
       vibrate(15);
       setStep("otp");
-    } catch (err) {
+    } catch {
       setError("Không gửi được mã. Kiểm tra lại email.");
     } finally {
       setLoading(false);
@@ -47,7 +47,7 @@ export default function LoginPage() {
       await verifyOtp(email, otp);
       vibrate([10, 30, 10]);
       // AuthContext tự cập nhật session -> useEffect ở trên chuyển vào app
-    } catch (err) {
+    } catch {
       setError("Mã OTP không đúng hoặc đã hết hạn.");
       vibrate(200);
     } finally {

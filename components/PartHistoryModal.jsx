@@ -112,7 +112,7 @@ export default function PartHistoryModal({ part, onClose, onChanged }) {
                       <div className="text-xs text-[var(--text-muted)] mt-0.5">
                         {formatKm(log.odo_at_service)} km · {formatVND(log.cost)}
                       </div>
-                      {log.note && <div className="text-xs text-[var(--text-muted)] mt-1 italic">"{log.note}"</div>}
+                      {log.note && <div className="text-xs text-[var(--text-muted)] mt-1 italic">“{log.note}”</div>}
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">

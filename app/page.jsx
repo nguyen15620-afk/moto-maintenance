@@ -23,7 +23,6 @@ import { todayLocal } from "@/lib/dates";
 import VehicleSwitcher from "@/components/VehicleSwitcher";
 import VehicleFormModal from "@/components/VehicleFormModal";
 import PartHistoryModal from "@/components/PartHistoryModal";
-import PinLock from "@/components/PinLock";
 import PartFormModal from "@/components/PartFormModal";
 import FuelSection from "@/components/FuelSection";
 import FuelFormModal from "@/components/FuelFormModal";
@@ -63,7 +62,9 @@ export default function HomePage() {
   const [fuelFormMode, setFuelFormMode] = useState(null); // null | "add" | "edit"
   const [editingFuelLog, setEditingFuelLog] = useState(null);
 
-  const [syncPendingCount, setSyncPendingCount] = useState(0);
+  // Đếm số item đang chờ ngay khi vào app (VD: đóng app lúc offline, mở lại vẫn còn hàng chờ).
+  // Trên server getQueue() trả [] (localStorage không có, đã được try/catch) -> 0.
+  const [syncPendingCount, setSyncPendingCount] = useState(() => getQueue().length);
   const [syncing, setSyncing] = useState(false);
   const syncLockRef = useRef(false);
   const [activeTab, setActiveTab] = useState("parts"); // "parts" | "fuel"
@@ -76,7 +77,7 @@ export default function HomePage() {
   // --- Load dữ liệu, có fallback offline cache ---
   const loadData = useCallback(async () => {
     try {
-      setLoading(true);
+      // loading đã là true từ đầu (useState(true)), loadData chỉ chạy 1 lần khi có user
       const vs = await fetchVehicles();
       const savedId = localStorage.getItem(ACTIVE_VEHICLE_KEY);
       const current = vs.find((v) => v.id === savedId) || vs[0];
@@ -111,6 +112,8 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    // loadData chỉ setState sau await (bất đồng bộ) nên không gây render dây chuyền
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (user) loadData();
   }, [user, loadData]);
 
@@ -255,11 +258,6 @@ const runSync = useCallback(async (manual = false) => {
   useEffect(() => {
     runSyncRef.current = runSync;
   }, [runSync]);
-
-  // Đếm số item đang chờ ngay khi vào app (VD: đóng app lúc offline, mở lại vẫn còn hàng chờ)
-  useEffect(() => {
-    refreshSyncCount();
-  }, [refreshSyncCount]);
 
   // Tự động thử đồng bộ khi có mạng trở lại, và khi xe active đã sẵn sàng
   useEffect(() => {
@@ -502,7 +500,7 @@ async function handleMovePart(partId, direction) {
   }
 
   return (
-    <PinLock>
+    <>
       <div className="min-h-screen bg-[var(--bg)] text-[var(--text)] pb-10">
         {offline && (
           <div className="bg-amber-500/15 text-amber-600 dark:text-amber-300 text-xs flex items-center justify-center gap-1.5 py-1.5 px-4">
@@ -841,7 +839,7 @@ async function handleMovePart(partId, direction) {
           />
         )}
       </div>
-    </PinLock>
+    </>
   );
 }
 
@@ -1087,7 +1085,7 @@ function AvgKmModal({ current, onClose, onSave }) {
   return (
     <ModalShell title="Tốc độ đi trung bình" onClose={onClose}>
       <label className="text-xs text-[var(--text-muted)] mb-1.5 block">
-        Trung bình bạn đi bao nhiêu km mỗi ngày? Dùng để ước tính "còn bao nhiêu ngày" đến hạn bảo dưỡng.
+        Trung bình bạn đi bao nhiêu km mỗi ngày? Dùng để ước tính “còn bao nhiêu ngày” đến hạn bảo dưỡng.
       </label>
       <div className="flex items-center gap-2">
         <input type="number" inputMode="numeric" autoFocus value={value} onChange={(e) => setValue(e.target.value)}

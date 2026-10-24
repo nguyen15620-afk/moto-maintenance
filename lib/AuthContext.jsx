@@ -62,7 +62,7 @@ export function AuthProvider({ children }) {
     // Xoá luôn cache offline, PIN, xe đang chọn và hàng đợi đồng bộ khi đăng xuất
     // — tất cả đều gắn với tài khoản vừa thoát
     localStorage.removeItem("motocare_cache");
-    localStorage.removeItem("motocare_pin");
+    localStorage.removeItem("motocare_pin"); // PIN cũ từ bản có khoá PIN (đã bỏ)
     localStorage.removeItem("motocare_active_vehicle");
     clearQueue();
   }
