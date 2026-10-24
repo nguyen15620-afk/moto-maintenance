@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bike, Gauge, Pencil, X, CheckCircle2, AlertTriangle, AlertCircle,
@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { saveCache, loadCache, clearCache } from "@/lib/offlineCache";
 import { vibrate } from "@/lib/haptics";
+import { todayLocal } from "@/lib/dates";
 import VehicleSwitcher from "@/components/VehicleSwitcher";
 import VehicleFormModal from "@/components/VehicleFormModal";
 import PartHistoryModal from "@/components/PartHistoryModal";
@@ -27,7 +28,7 @@ import PartFormModal from "@/components/PartFormModal";
 import FuelSection from "@/components/FuelSection";
 import FuelFormModal from "@/components/FuelFormModal";
 import { getQueue, enqueue, processQueue, isLikelyNetworkError, getFailedItems, discardFailedItems } from "@/lib/syncQueue";
-import { getEstimatedOdo, computePartStatus, STATUS_CONFIG } from "@/lib/partStatus";
+import { getEstimatedOdo, computePartStatus, STATUS_CONFIG, DEFAULT_AVG_KM_PER_DAY } from "@/lib/partStatus";
 import { predictNextRefill } from "@/lib/fuelStats";
 import DeleteVehicleModal from "@/components/DeleteVehicleModal";
 
@@ -64,6 +65,7 @@ export default function HomePage() {
 
   const [syncPendingCount, setSyncPendingCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const syncLockRef = useRef(false);
   const [activeTab, setActiveTab] = useState("parts"); // "parts" | "fuel"
 
   // --- Auth gate: chưa đăng nhập -> chuyển sang /login ---
@@ -116,13 +118,18 @@ export default function HomePage() {
   async function handleSwitchVehicle(vehicleId) {
     vibrate(10);
     const v = vehicles.find((x) => x.id === vehicleId);
-    setActiveVehicle(v);
-    localStorage.setItem(ACTIVE_VEHICLE_KEY, vehicleId);
-    const p = await fetchParts(vehicleId);
-    setParts(p);
-    const f = await fetchFuelLogs(vehicleId);
-    setFuelLogs(f);
-    saveCache({ vehicle: v, parts: p, fuelLogs: f });
+    try {
+      const [p, f] = await Promise.all([fetchParts(vehicleId), fetchFuelLogs(vehicleId)]);
+      // Chỉ đổi xe khi đã tải được dữ liệu — tránh hiện tên xe mới với phụ tùng của xe cũ
+      setActiveVehicle(v);
+      localStorage.setItem(ACTIVE_VEHICLE_KEY, vehicleId);
+      setParts(p);
+      setFuelLogs(f);
+      saveCache({ vehicle: v, parts: p, fuelLogs: f });
+    } catch (err) {
+      console.error(err);
+      window.alert("Không tải được dữ liệu xe này. Kiểm tra kết nối rồi thử lại.");
+    }
   }
 
   // ODO ước tính hôm nay — dùng để tính trạng thái/% hao mòn, "tự nhích" mỗi ngày
@@ -194,10 +201,14 @@ const queueHandlers = useMemo(
 
 // manual = true khi người dùng tự bấm nút đồng bộ -> được hỏi có bỏ các item lỗi không
 const runSync = useCallback(async (manual = false) => {
-  if (syncing) return;
+  // Khoá bằng ref (không dùng state `syncing`): state đọc trong closure có thể
+  // đã cũ, 2 lần gọi sát nhau (sự kiện online + đổi xe) sẽ cùng lọt qua và
+  // ghi 1 thao tác 2 lần -> log bảo dưỡng/đổ xăng bị trùng.
+  if (syncLockRef.current) return;
   if (typeof navigator !== "undefined" && !navigator.onLine) return;
   if (getQueue().length === 0) return;
 
+  syncLockRef.current = true;
   setSyncing(true);
   try {
     await processQueue(queueHandlers);
@@ -227,12 +238,23 @@ const runSync = useCallback(async (manual = false) => {
       setActiveVehicle(freshVehicle);
       setParts(freshParts);
       setFuelLogs(freshFuel);
-      saveCache({ vehicle: freshVehicle, parts: freshParts });
+      saveCache({ vehicle: freshVehicle, parts: freshParts, fuelLogs: freshFuel });
     }
+  } catch (err) {
+    // Tải lại sau đồng bộ lỗi (VD: mạng chập chờn) -> giữ dữ liệu đang hiển thị, lần sau thử lại
+    console.error(err);
   } finally {
+    syncLockRef.current = false;
     setSyncing(false);
   }
-}, [syncing, activeVehicle, queueHandlers, refreshSyncCount]);
+}, [activeVehicle, queueHandlers, refreshSyncCount]);
+
+  // Listener "online" chỉ đăng ký lại khi đổi xe -> luôn gọi runSync MỚI NHẤT
+  // qua ref, tránh dùng activeVehicle cũ trong closure
+  const runSyncRef = useRef(runSync);
+  useEffect(() => {
+    runSyncRef.current = runSync;
+  }, [runSync]);
 
   // Đếm số item đang chờ ngay khi vào app (VD: đóng app lúc offline, mở lại vẫn còn hàng chờ)
   useEffect(() => {
@@ -241,9 +263,9 @@ const runSync = useCallback(async (manual = false) => {
 
   // Tự động thử đồng bộ khi có mạng trở lại, và khi xe active đã sẵn sàng
   useEffect(() => {
-    function handleOnline() { runSync(); }
+    function handleOnline() { runSyncRef.current(); }
     window.addEventListener("online", handleOnline);
-    if (activeVehicle) runSync();
+    if (activeVehicle) runSyncRef.current();
     return () => window.removeEventListener("online", handleOnline);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVehicle?.id]);
@@ -389,9 +411,14 @@ async function handleDeleteVehicle() {
   }
 
 async function handleDeleteFuelLog(logId) {
-  await deleteFuelLog(logId);
-  setFuelLogs((prev) => prev.filter((l) => l.id !== logId));
-  vibrate(200);
+  try {
+    await deleteFuelLog(logId);
+    setFuelLogs((prev) => prev.filter((l) => l.id !== logId));
+    vibrate(200);
+  } catch (err) {
+    console.error(err);
+    window.alert("Không xoá được lần đổ xăng. Kiểm tra kết nối rồi thử lại.");
+  }
 }
 
   async function handleSavePart(values) {
@@ -407,9 +434,14 @@ async function handleDeleteFuelLog(logId) {
 }
 
 async function handleDeletePart(partId) {
-  await deactivatePart(partId);
-  await refreshParts();
-  vibrate(200);
+  try {
+    await deactivatePart(partId);
+    await refreshParts();
+    vibrate(200);
+  } catch (err) {
+    console.error(err);
+    window.alert("Không xoá được phụ tùng. Kiểm tra kết nối rồi thử lại.");
+  }
 }
 
 async function handleMovePart(partId, direction) {
@@ -585,7 +617,7 @@ async function handleMovePart(partId, direction) {
               className="mt-2 flex items-center gap-1.5 text-xs text-[var(--text-muted)]"
             >
               <SpeedIcon className="w-3.5 h-3.5" />
-              Trung bình {activeVehicle.avg_km_per_day || 20} km/ngày
+              Trung bình {activeVehicle.avg_km_per_day || DEFAULT_AVG_KM_PER_DAY} km/ngày
               <Pencil className="w-3 h-3" />
             </button>
 
@@ -672,7 +704,7 @@ async function handleMovePart(partId, direction) {
                     <PartCard
                       key={part.id}
                       part={part}
-                      avgKmPerDay={activeVehicle.avg_km_per_day || 20}
+                      avgKmPerDay={activeVehicle.avg_km_per_day || DEFAULT_AVG_KM_PER_DAY}
                       onMarkDone={() => { vibrate(10); setServiceModalPart(part); }}
                       onViewHistory={() => { vibrate(10); setHistoryModalPart(part); }}
                       onEdit={() => { vibrate(10); setEditingPart(part); setPartFormMode("edit"); }}
@@ -803,7 +835,7 @@ async function handleMovePart(partId, direction) {
 
         {avgKmModalOpen && (
           <AvgKmModal
-            current={activeVehicle.avg_km_per_day || 20}
+            current={activeVehicle.avg_km_per_day || DEFAULT_AVG_KM_PER_DAY}
             onClose={() => setAvgKmModalOpen(false)}
             onSave={handleUpdateAvgKm}
           />
@@ -1072,7 +1104,7 @@ function AvgKmModal({ current, onClose, onSave }) {
 }
 
 function ServiceModal({ part, currentOdo, onClose, onSave }) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayLocal());
   const [odo, setOdo] = useState(String(currentOdo));
   const [cost, setCost] = useState("");
   const [note, setNote] = useState("");

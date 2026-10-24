@@ -2,7 +2,8 @@
 // Service Worker đơn giản: cache các tài nguyên tĩnh (app shell) để load nhanh
 // ở lần mở sau. KHÔNG cache API call tới Supabase — dữ liệu luôn phải mới nhất.
 
-const CACHE_NAME = "motocare-cache-v1";
+// Đổi version -> bước "activate" bên dưới xoá cache cũ (v1 từng lưu cả phản hồi lỗi)
+const CACHE_NAME = "motocare-cache-v2";
 const STATIC_ASSETS = ["/", "/manifest.json"];
 
 // Khi cài đặt: cache trước các tài nguyên tĩnh cơ bản
@@ -30,15 +31,20 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  if (url.hostname.includes("supabase.co")) {
-    return; // không can thiệp — luôn lấy dữ liệu mới nhất
-  }
+  // Chỉ xử lý GET cùng origin (bỏ qua Supabase, Google, API route...) —
+  // Cache API không lưu được POST/PUT, còn dữ liệu bên ngoài phải luôn mới nhất
+  if (event.request.method !== "GET") return;
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/api/")) return;
 
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        // Chỉ cache phản hồi thành công — tránh lúc mất mạng lại hiện trang lỗi 404/500 cũ
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
         return response;
       })
       .catch(() => caches.match(event.request))

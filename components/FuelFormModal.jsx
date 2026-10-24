@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { X, Loader2, Fuel, Calendar, Gauge, Coins, MapPin, StickyNote, ChevronDown } from "lucide-react";
 import { vibrate } from "@/lib/haptics";
+import { todayLocal } from "@/lib/dates";
 
 // Chuẩn hoá chuỗi số thập phân người dùng gõ: cho phép cả dấu phẩy (,) lẫn
 // dấu chấm (.) làm dấu thập phân — bàn phím số tiếng Việt trên nhiều máy
@@ -34,7 +35,7 @@ function toNumber(v) {
  *  - onClose, onSave(values)
  */
 export default function FuelFormModal({ initialValues = {}, minOdo = 0, onClose, onSave }) {
-  const [fillDate, setFillDate] = useState(initialValues.fillDate || new Date().toISOString().slice(0, 10));
+  const [fillDate, setFillDate] = useState(initialValues.fillDate || todayLocal());
   const [odoAtFill, setOdoAtFill] = useState(String(initialValues.odoAtFill ?? minOdo));
   const [liters, setLiters] = useState(
     initialValues.liters !== undefined && initialValues.liters !== null ? String(initialValues.liters) : ""

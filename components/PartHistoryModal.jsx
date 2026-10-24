@@ -22,30 +22,50 @@ export default function PartHistoryModal({ part, onClose, onChanged }) {
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     (async () => {
-      setLoading(true);
-      const data = await fetchLogsByPart(part.id);
-      setLogs(data);
-      setLoading(false);
+      try {
+        const data = await fetchLogsByPart(part.id);
+        setLogs(data);
+      } catch (err) {
+        console.error(err);
+        setError("Không tải được lịch sử. Kiểm tra kết nối rồi thử lại.");
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [part.id]);
 
   async function handleUpdate(logId, values) {
-    const updated = await updateMaintenanceLog(logId, values);
-    setLogs((prev) => prev.map((l) => (l.id === logId ? updated : l)));
-    setEditingId(null);
-    onChanged?.();
-    vibrate([10, 20]);
+    try {
+      const updated = await updateMaintenanceLog(logId, values);
+      setLogs((prev) => prev.map((l) => (l.id === logId ? updated : l)));
+      setEditingId(null);
+      setError("");
+      onChanged?.();
+      vibrate([10, 20]);
+    } catch (err) {
+      console.error(err);
+      setError("Không lưu được bản ghi. Thử lại sau.");
+      vibrate(200);
+    }
   }
 
   async function handleDelete(logId) {
-    await deleteMaintenanceLog(logId);
-    setLogs((prev) => prev.filter((l) => l.id !== logId));
-    setConfirmDeleteId(null);
-    onChanged?.();
-    vibrate(200);
+    try {
+      await deleteMaintenanceLog(logId);
+      setLogs((prev) => prev.filter((l) => l.id !== logId));
+      setConfirmDeleteId(null);
+      setError("");
+      onChanged?.();
+      vibrate(200);
+    } catch (err) {
+      console.error(err);
+      setConfirmDeleteId(null);
+      setError("Không xoá được bản ghi. Thử lại sau.");
+    }
   }
 
   return (
@@ -61,13 +81,15 @@ export default function PartHistoryModal({ part, onClose, onChanged }) {
         </div>
 
         <div className="overflow-y-auto space-y-2.5">
+          {error && <p className="text-xs text-[var(--danger-text)] text-center">{error}</p>}
+
           {loading && (
             <div className="flex justify-center py-10">
               <Loader2 className="w-5 h-5 text-[var(--accent)] animate-spin" />
             </div>
           )}
 
-          {!loading && logs.length === 0 && (
+          {!loading && !error && logs.length === 0 && (
             <p className="text-sm text-[var(--text-muted)] text-center py-10">
               Chưa có lịch sử nào cho phụ tùng này.
             </p>

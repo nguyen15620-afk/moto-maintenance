@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { X, Loader2, Wrench } from "lucide-react";
 import { vibrate } from "@/lib/haptics";
+import { todayLocal } from "@/lib/dates";
 
 /**
  * PartFormModal — dùng chung 2 việc:
@@ -22,7 +23,7 @@ export default function PartFormModal({ mode = "add", initialValues = {}, onClos
   const [intervalKm, setIntervalKm] = useState(initialValues.intervalKm ? String(initialValues.intervalKm) : "");
   const [intervalMonths, setIntervalMonths] = useState(initialValues.intervalMonths ? String(initialValues.intervalMonths) : "");
   const [lastServiceOdo, setLastServiceOdo] = useState(String(initialValues.currentOdo ?? 0));
-  const [lastServiceDate, setLastServiceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [lastServiceDate, setLastServiceDate] = useState(todayLocal());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
