@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Coins, TrendingUp, Wrench, Fuel, Download } from "lucide-react";
 import { fetchVehicles, fetchMonthlyCost, fetchTopCostParts, fetchYearSummary, fetchFuelLogs } from "@/lib/api";
+import { useAuth } from "@/lib/AuthContext";
 
 const formatVND = (n) => (n || 0).toLocaleString("vi-VN") + "đ";
 const monthLabel = (dateStr) => {
@@ -13,38 +14,56 @@ const monthLabel = (dateStr) => {
 
 export default function CostReportPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
   const [monthly, setMonthly] = useState([]);
   const [topParts, setTopParts] = useState([]);
   const [yearSummary, setYearSummary] = useState({ totalCost: 0, serviceCount: 0, fuelCost: 0 });
 
+  // --- Auth gate: chưa đăng nhập -> chuyển sang /login ---
   useEffect(() => {
-    async function load() {
-      const vehicles = await fetchVehicles();
-      const savedId = localStorage.getItem("motocare_active_vehicle");
-      // Không tin mù quáng giá trị trong localStorage — chỉ dùng nếu ID đó
-      // THỰC SỰ nằm trong danh sách xe của tài khoản đang đăng nhập (tránh
-      // trường hợp localStorage còn sót ID từ tài khoản/xe khác đã test trước đó).
-      const activeVehicle = vehicles.find((v) => v.id === savedId) || vehicles[0];
-      const activeId = activeVehicle?.id;
-      if (activeId) localStorage.setItem("motocare_active_vehicle", activeId); // tự sửa lại nếu sai
-      if (!activeId) return setLoading(false);
+    if (!authLoading && !user) router.replace("/login");
+  }, [authLoading, user, router]);
 
-      const [m, t, y, fuelLogs] = await Promise.all([
-        fetchMonthlyCost(activeId),
-        fetchTopCostParts(activeId),
-        fetchYearSummary(activeId, new Date().getFullYear()),
-        fetchFuelLogs(activeId),
-      ]);
-      // Tính chi phí xăng trong năm hiện tại
-      const currentYear = new Date().getFullYear();
-      const fuelCostThisYear = fuelLogs
-        .filter((f) => f.fill_date && new Date(f.fill_date).getFullYear() === currentYear)
-        .reduce((sum, f) => sum + (f.total_cost || 0), 0);
-      setMonthly(m);
-      setTopParts(t.filter((p) => p.total_cost > 0));
-      setYearSummary({ ...y, fuelCost: fuelCostThisYear });
-      setLoading(false);
+  useEffect(() => {
+    if (!user) return;
+
+    async function load() {
+      try {
+        const vehicles = await fetchVehicles();
+        const savedId = localStorage.getItem("motocare_active_vehicle");
+        // Không tin mù quáng giá trị trong localStorage — chỉ dùng nếu ID đó
+        // THỰC SỰ nằm trong danh sách xe của tài khoản đang đăng nhập (tránh
+        // trường hợp localStorage còn sót ID từ tài khoản/xe khác đã test trước đó).
+        const activeVehicle = vehicles.find((v) => v.id === savedId) || vehicles[0];
+        const activeId = activeVehicle?.id;
+        if (activeId) localStorage.setItem("motocare_active_vehicle", activeId); // tự sửa lại nếu sai
+        if (!activeId) return; // chưa có xe -> finally tự tắt loading
+
+        const [m, t, y, fuelLogs] = await Promise.all([
+          fetchMonthlyCost(activeId),
+          fetchTopCostParts(activeId),
+          fetchYearSummary(activeId, new Date().getFullYear()),
+          fetchFuelLogs(activeId),
+        ]);
+        // Tính chi phí xăng trong năm hiện tại
+        const currentYear = new Date().getFullYear();
+        const fuelCostThisYear = fuelLogs
+          .filter((f) => f.fill_date && new Date(f.fill_date).getFullYear() === currentYear)
+          .reduce((sum, f) => sum + (f.total_cost || 0), 0);
+        setMonthly(m);
+        setTopParts(t.filter((p) => p.total_cost > 0));
+        setYearSummary({ ...y, fuelCost: fuelCostThisYear });
+        setError("");
+      } catch (err) {
+        // Mất mạng / Supabase lỗi hoặc đang pause -> báo lỗi thay vì kẹt "Đang tải..."
+        console.error(err);
+        setError("Không tải được dữ liệu. Kiểm tra kết nối rồi thử lại.");
+      } finally {
+        setLoading(false);
+      }
     }
 
     load();
@@ -63,7 +82,7 @@ export default function CostReportPage() {
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, []);
+  }, [user, reloadKey]);
 
   const maxMonthly = Math.max(...monthly.map((m) => m.total_cost), 1);
 
@@ -108,6 +127,16 @@ export default function CostReportPage() {
       <main className="max-w-md mx-auto px-4 mt-4 space-y-5">
         {loading ? (
           <p className="text-sm text-[var(--text-muted)] text-center py-10">Đang tải...</p>
+        ) : error ? (
+          <div className="text-center py-10 space-y-3">
+            <p className="text-sm text-[var(--danger-text)]">{error}</p>
+            <button
+              onClick={() => { setLoading(true); setError(""); setReloadKey((k) => k + 1); }}
+              className="text-xs text-[var(--accent)] font-medium underline"
+            >
+              Thử lại
+            </button>
+          </div>
         ) : (
           <>
             {/* Tổng quan năm nay */}

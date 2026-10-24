@@ -26,7 +26,7 @@ import PinLock from "@/components/PinLock";
 import PartFormModal from "@/components/PartFormModal";
 import FuelSection from "@/components/FuelSection";
 import FuelFormModal from "@/components/FuelFormModal";
-import { getQueue, enqueue, processQueue, isLikelyNetworkError } from "@/lib/syncQueue";
+import { getQueue, enqueue, processQueue, isLikelyNetworkError, getFailedItems, discardFailedItems } from "@/lib/syncQueue";
 import { getEstimatedOdo, computePartStatus, STATUS_CONFIG } from "@/lib/partStatus";
 import { predictNextRefill } from "@/lib/fuelStats";
 import DeleteVehicleModal from "@/components/DeleteVehicleModal";
@@ -192,7 +192,8 @@ const queueHandlers = useMemo(
   []
 );
 
-const runSync = useCallback(async () => {
+// manual = true khi người dùng tự bấm nút đồng bộ -> được hỏi có bỏ các item lỗi không
+const runSync = useCallback(async (manual = false) => {
   if (syncing) return;
   if (typeof navigator !== "undefined" && !navigator.onLine) return;
   if (getQueue().length === 0) return;
@@ -200,6 +201,17 @@ const runSync = useCallback(async () => {
   setSyncing(true);
   try {
     await processQueue(queueHandlers);
+
+    // Item lỗi THẬT (RLS, dữ liệu sai...) thử lại bao nhiêu lần cũng không qua —
+    // cho người dùng chọn bỏ đi, tránh kẹt mãi trong hàng đợi
+    const failed = getFailedItems();
+    if (manual && failed.length > 0) {
+      const ok = window.confirm(
+        `${failed.length} thao tác không đồng bộ được (lỗi: ${failed[0].lastError}).\n` +
+          "Bỏ các thao tác này khỏi hàng đợi?"
+      );
+      if (ok) discardFailedItems();
+    }
     refreshSyncCount();
 
     // Đồng bộ xong -> tải lại dữ liệu THẬT từ server để thay thế các giá trị
@@ -507,7 +519,13 @@ async function handleMovePart(partId, direction) {
                   <BarChart3 className="w-4 h-4 text-[var(--text-muted)]" />
                 </button>
                 <button
-                  onClick={() => { vibrate(10); signOut(); }}
+                  onClick={() => {
+                    vibrate(10);
+                    // Đăng xuất sẽ xoá hàng đợi -> cảnh báo nếu còn thao tác chưa đồng bộ
+                    const pending = getQueue().length;
+                    if (pending > 0 && !window.confirm(`Còn ${pending} thao tác chưa đồng bộ, đăng xuất sẽ mất các thao tác này. Vẫn đăng xuất?`)) return;
+                    signOut();
+                  }}
                   className="w-8 h-8 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center"
                   title="Đăng xuất"
                   aria-label="Đăng xuất"
@@ -519,7 +537,7 @@ async function handleMovePart(partId, direction) {
 
             {syncPendingCount > 0 && (
               <button
-                onClick={() => { vibrate(10); runSync(); }}
+                onClick={() => { vibrate(10); runSync(true); }}
                 disabled={syncing}
                 className="w-8 h-8 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center relative"
                 title={`${syncPendingCount} thao tác đang chờ đồng bộ`}

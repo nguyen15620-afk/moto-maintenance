@@ -6,6 +6,7 @@ import { ArrowLeft, Bike, Gauge, Coins, Wrench, Fuel, TrendingUp, ChevronRight }
 import { fetchVehicles, fetchParts, fetchFuelLogs, fetchMonthlyCost } from "@/lib/api";
 import { getEstimatedOdo, computePartStatus } from "@/lib/partStatus";
 import { buildConsumptionPoints } from "@/lib/fuelStats";
+import { useAuth } from "@/lib/AuthContext";
 
 const ACTIVE_VEHICLE_KEY = "motocare_active_vehicle";
 
@@ -59,34 +60,52 @@ function buildVehicleSummary(vehicle, parts, fuelLogs, monthlyCost) {
 
 export default function OverviewPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
   const [rows, setRows] = useState([]); // [{ vehicle, summary }]
 
+  // --- Auth gate: chưa đăng nhập -> chuyển sang /login ---
   useEffect(() => {
+    if (!authLoading && !user) router.replace("/login");
+  }, [authLoading, user, router]);
+
+  useEffect(() => {
+    if (!user) return;
+
     async function load() {
-      const vehicles = await fetchVehicles();
+      try {
+        const vehicles = await fetchVehicles();
 
-      const results = (await Promise.all(
-        vehicles.map(async (v) => {
-          try {
-            const [parts, fuelLogs, monthlyCost] = await Promise.all([
-              fetchParts(v.id),
-              fetchFuelLogs(v.id),
-              fetchMonthlyCost(v.id),
-            ]);
-            return { vehicle: v, summary: buildVehicleSummary(v, parts, fuelLogs, monthlyCost) };
-          } catch (err) {
-            console.error(`Lỗi tải dữ liệu xe ${v.name}:`, err);
-            return null; // bỏ qua xe lỗi, không crash cả trang
-          }
-        })
-      )).filter(Boolean);
+        const results = (await Promise.all(
+          vehicles.map(async (v) => {
+            try {
+              const [parts, fuelLogs, monthlyCost] = await Promise.all([
+                fetchParts(v.id),
+                fetchFuelLogs(v.id),
+                fetchMonthlyCost(v.id),
+              ]);
+              return { vehicle: v, summary: buildVehicleSummary(v, parts, fuelLogs, monthlyCost) };
+            } catch (err) {
+              console.error(`Lỗi tải dữ liệu xe ${v.name}:`, err);
+              return null; // bỏ qua xe lỗi, không crash cả trang
+            }
+          })
+        )).filter(Boolean);
 
-      setRows(results);
-      setLoading(false);
+        setRows(results);
+        setError("");
+      } catch (err) {
+        // Mất mạng / Supabase lỗi hoặc đang pause -> báo lỗi thay vì kẹt "Đang tải..."
+        console.error(err);
+        setError("Không tải được dữ liệu. Kiểm tra kết nối rồi thử lại.");
+      } finally {
+        setLoading(false);
+      }
     }
     load();
-  }, []);
+  }, [user, reloadKey]);
 
   function handleSelectVehicle(vehicleId) {
     localStorage.setItem(ACTIVE_VEHICLE_KEY, vehicleId);
@@ -109,6 +128,16 @@ export default function OverviewPage() {
       <main className="max-w-md mx-auto px-4 mt-4 space-y-3">
         {loading ? (
           <p className="text-sm text-[var(--text-muted)] text-center py-10">Đang tải...</p>
+        ) : error ? (
+          <div className="text-center py-10 space-y-3">
+            <p className="text-sm text-[var(--danger-text)]">{error}</p>
+            <button
+              onClick={() => { setLoading(true); setError(""); setReloadKey((k) => k + 1); }}
+              className="text-xs text-[var(--accent)] font-medium underline"
+            >
+              Thử lại
+            </button>
+          </div>
         ) : rows.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)] text-center py-10">Bạn chưa có xe nào.</p>
         ) : (

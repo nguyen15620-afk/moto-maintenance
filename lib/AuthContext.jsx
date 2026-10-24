@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
+import { clearQueue } from "./syncQueue";
 
 const AuthContext = createContext(null);
 
@@ -58,9 +59,12 @@ export function AuthProvider({ children }) {
 
   async function signOut() {
     await supabase.auth.signOut();
-    // Xoá luôn cache offline + PIN khoá màn hình khi đăng xuất
+    // Xoá luôn cache offline, PIN, xe đang chọn và hàng đợi đồng bộ khi đăng xuất
+    // — tất cả đều gắn với tài khoản vừa thoát
     localStorage.removeItem("motocare_cache");
     localStorage.removeItem("motocare_pin");
+    localStorage.removeItem("motocare_active_vehicle");
+    clearQueue();
   }
 
   const value = {

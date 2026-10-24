@@ -243,6 +243,8 @@ export default function FuelSection({ fuelLogs, currentOdo, onAdd, onEdit, onDel
                   </div>
                   {log.station && <div className="text-xs text-[var(--text-muted)] mt-0.5">{log.station}</div>}
                 </div>
+                {/* Bản ghi chờ đồng bộ chưa có id thật trên server -> chưa cho sửa/xoá */}
+                {!log.pending && (
                 <div className="flex items-center gap-1 shrink-0">
                   <button onClick={() => { vibrate(10); onEdit(log); }} className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/5 flex items-center justify-center" aria-label="Sửa lần đổ xăng">
                     <Pencil className="w-3.5 h-3.5 text-[var(--text-muted)]" />
@@ -264,6 +266,7 @@ export default function FuelSection({ fuelLogs, currentOdo, onAdd, onEdit, onDel
                     </button>
                   )}
                 </div>
+                )}
               </div>
             </div>
           );

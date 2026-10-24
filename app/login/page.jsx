@@ -1,12 +1,19 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Bike, Mail, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { vibrate } from "@/lib/haptics";
 
 export default function LoginPage() {
-  const { signInWithOtp, verifyOtp, signInWithGoogle } = useAuth();
+  const router = useRouter();
+  const { user, signInWithOtp, verifyOtp, signInWithGoogle } = useAuth();
+
+  // Đã có session (vừa xác thực OTP xong, hoặc đã đăng nhập từ trước) -> vào app
+  useEffect(() => {
+    if (user) router.replace("/");
+  }, [user, router]);
   const [email, setEmail] = useState("");
   const [step, setStep] = useState("email"); // email | otp
   const [otp, setOtp] = useState("");
@@ -39,7 +46,7 @@ export default function LoginPage() {
     try {
       await verifyOtp(email, otp);
       vibrate([10, 30, 10]);
-      // AuthContext sẽ tự cập nhật session -> layout tự chuyển vào app
+      // AuthContext tự cập nhật session -> useEffect ở trên chuyển vào app
     } catch (err) {
       setError("Mã OTP không đúng hoặc đã hết hạn.");
       vibrate(200);
